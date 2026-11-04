@@ -16,6 +16,20 @@ export function getRepository(): TacticRepository {
   return repo;
 }
 
+type SyncHook = (id: string, kind: 'upsert' | 'delete') => Promise<void> | void;
+let syncHook: SyncHook | null = null;
+/** 雲端同步啟用時，每次本機存檔後通知同步引擎 */
+export function setSyncHook(h: SyncHook | null): void {
+  syncHook = h;
+}
+async function notifySync(id: string, kind: 'upsert' | 'delete'): Promise<void> {
+  try {
+    await syncHook?.(id, kind);
+  } catch (err) {
+    console.error(err);
+  }
+}
+
 let lastSavedProject: TacticProject | null = null;
 let lastSavedFormations: Formation[] | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;
@@ -86,6 +100,7 @@ async function doSave(): Promise<void> {
       await repo.saveProject(project);
       await repo.setMeta(LAST_PROJECT_KEY, project.id);
       lastSavedProject = project;
+      await notifySync(project.id, 'upsert');
     }
     if (forms !== lastSavedFormations) {
       await repo.replaceFormations(forms);
@@ -140,10 +155,21 @@ export async function openProject(id: string): Promise<void> {
   useStore.getState().loadProject(p);
 }
 
+/** 把一份戰術（例如教材副本）存成新的本機戰術並開啟 */
+export async function openAsNewProject(project: TacticProject, titleSuffix = '（副本）'): Promise<void> {
+  await flushSave();
+  const p = await repo.saveProject(cloneAsNewProject(project, titleSuffix));
+  lastSavedProject = p;
+  await repo.setMeta(LAST_PROJECT_KEY, p.id);
+  await notifySync(p.id, 'upsert');
+  useStore.getState().loadProject(p);
+}
+
 export async function newProject(opts: CreateProjectOptions): Promise<void> {
   await flushSave();
   const p = await repo.saveProject(createProject(opts));
   lastSavedProject = p;
+  await notifySync(p.id, 'upsert');
   await repo.setMeta(LAST_PROJECT_KEY, p.id);
   useStore.getState().loadProject(p);
 }
@@ -151,6 +177,7 @@ export async function newProject(opts: CreateProjectOptions): Promise<void> {
 export async function deleteProject(id: string): Promise<void> {
   const current = useStore.getState().history.present.id;
   await repo.deleteProject(id);
+  await notifySync(id, 'delete');
   if (id === current) {
     const list = await repo.listProjects();
     if (list[0]) {
@@ -217,6 +244,7 @@ export async function importJsonText(text: string): Promise<ImportResult> {
     await flushSave();
     const imported = await repo.saveProject(cloneAsNewProject(r.value.project, '（匯入）'));
     lastSavedProject = imported;
+    await notifySync(imported.id, 'upsert');
     await repo.setMeta(LAST_PROJECT_KEY, imported.id);
     useStore.getState().loadProject(imported);
     parts.push(`戰術「${imported.title}」`);

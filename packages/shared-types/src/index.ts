@@ -131,3 +131,130 @@ export interface ExportBundle {
   project?: TacticProject;
   formations?: Formation[];
 }
+
+// ═════════════════════════ Phase 2：教材、學生挑戰、任務、作答 ═════════════════════════
+
+/** 判定區（球場公尺座標的圓）：學生答案落在任一判定區即算合理 */
+export interface Zone {
+  x: number;
+  y: number;
+  r: number;
+  label?: string;
+}
+
+interface ChallengeBase {
+  id: string;
+  title: string;
+  prompt: string;
+  /** 題目顯示的戰術步驟 */
+  stepIndex: number;
+  hint?: string;
+  /** 作答後顯示的教學說明 */
+  explanation: string;
+  points: number;
+}
+
+/** 站位挑戰：把指定球員拖到合理位置（每人可有多個合理區） */
+export interface PlacementChallenge extends ChallengeBase {
+  type: 'placement';
+  movable: string[];
+  targets: Record<string, Zone[]>;
+  /** 題目開始時要先移開的球員位置（避免答案直接顯示在畫面上） */
+  startPositions?: Record<string, Vec2>;
+  /** 參考答案所在的步驟（預設為 stepIndex） */
+  solutionStepIndex?: number;
+}
+
+/** 跑位預測：預測某位球員下一步會到哪裡 */
+export interface PredictChallenge extends ChallengeBase {
+  type: 'predict';
+  playerId: string;
+  targets: Zone[];
+  /** 揭曉答案時播放到此步驟 */
+  answerStepIndex: number;
+  /** 題目畫面中覆寫的位置（例如持球者已換人、防守者尚未移動） */
+  overrides?: Record<string, Vec2>;
+  ballHolderOverride?: string | null;
+}
+
+/** 戰術選擇：單選或多選（允許多個合理答案） */
+export interface ChoiceChallenge extends ChallengeBase {
+  type: 'choice';
+  options: { id: string; text: string }[];
+  correct: string[];
+  multiple: boolean;
+}
+
+export type Challenge = PlacementChallenge | PredictChallenge | ChoiceChallenge;
+export type ChallengeType = Challenge['type'];
+
+export type LessonCategory = 'offense' | 'defense' | 'transition';
+
+export interface Lesson {
+  id: string;
+  title: string;
+  en: string;
+  category: LessonCategory;
+  difficulty: 1 | 2 | 3;
+  summary: string;
+  objectives: string[];
+  keyPoints: string[];
+  project: TacticProject;
+  challenges: Challenge[];
+}
+
+export type ChallengeAnswer =
+  | { type: 'placement'; positions: Record<string, Vec2> }
+  | { type: 'predict'; position: Vec2 }
+  | { type: 'choice'; selected: string[] };
+
+export interface ChallengeResult {
+  challengeId: string;
+  type: ChallengeType;
+  score: number;
+  maxScore: number;
+  correct: boolean;
+  /** 0～1 */
+  ratio: number;
+  /** 每位球員（placement）或每個選項（choice）的判定 */
+  details: Record<string, boolean>;
+  answer: ChallengeAnswer;
+  tries: number;
+}
+
+/** 教師發布的任務（學生只能讀取快照，不能改原始教材） */
+export interface Assignment {
+  id: string;
+  code: string;
+  title: string;
+  message: string;
+  lessonId: string;
+  /** 教材快照：學生看到的是發布當下的內容 */
+  lesson: Lesson;
+  challengeIds: string[];
+  open: boolean;
+  createdAt: string;
+  ownerId?: string;
+}
+
+export interface StudentIdentity {
+  className: string;
+  seatNo: string;
+  name: string;
+}
+
+export interface Attempt {
+  id: string;
+  assignmentId: string;
+  assignmentCode: string;
+  lessonId: string;
+  student: StudentIdentity;
+  results: ChallengeResult[];
+  score: number;
+  maxScore: number;
+  submittedAt: string;
+  teacherFeedback: string;
+  feedbackAt: string | null;
+  /** cloud = 已上傳雲端；local = 本機／匯入檔 */
+  source: 'cloud' | 'local';
+}

@@ -44,7 +44,7 @@ export function TopBar() {
 
   return (
     <header className="topbar">
-      <div className="brand">
+      <div className="brand" hidden>
         <svg width="30" height="30" viewBox="0 0 64 64" aria-hidden>
           <circle cx="32" cy="32" r="29" fill="#ee7b2c" stroke="#14213d" strokeWidth="3" />
           <path d="M3 32h58M32 3v58M12 12c10 9 10 31 0 40M52 12c-10 9-10 31 0 40" fill="none" stroke="#14213d" strokeWidth="3" />

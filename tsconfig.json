@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": { "noEmit": true, "types": ["node"] },
-  "include": ["packages/*/src", "packages/*/test", "vitest.workspace.ts", "vitest.config.ts"]
+  "include": ["packages/*/src", "packages/*/test", "supabase/tests", "vitest.workspace.ts", "vitest.config.ts"]
 }

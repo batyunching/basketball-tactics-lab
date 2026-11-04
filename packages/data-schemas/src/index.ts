@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SCHEMA_VERSION, type ExportBundle, type Formation, type TacticProject } from '@btl/shared-types';
+import { SCHEMA_VERSION, type Assignment, type Attempt, type ExportBundle, type Formation, type Lesson, type TacticProject } from '@btl/shared-types';
 
 /** 座標限制：球場 28×15 外加界外緩衝，避免匯入異常資料 */
 const coord = z.number().finite().min(-5).max(35);
@@ -177,4 +177,136 @@ export function buildExportBundle(project: TacticProject | undefined, formations
   }
   if (formations) bundle.formations = formations;
   return bundle;
+}
+
+// ═════════════════════════ Phase 2：教材、任務、作答 ═════════════════════════
+
+export const zoneSchema = z.object({ x: coord, y: coord, r: z.number().positive().max(10), label: z.string().max(60).optional() });
+const challengeBase = {
+  id: z.string().min(1).max(80),
+  title: z.string().max(100),
+  prompt: z.string().max(500),
+  stepIndex: z.number().int().min(0),
+  hint: z.string().max(300).optional(),
+  explanation: z.string().max(1000),
+  points: z.number().min(0).max(100),
+};
+export const challengeSchema = z.discriminatedUnion('type', [
+  z.object({
+    ...challengeBase,
+    type: z.literal('placement'),
+    movable: z.array(z.string()).min(1).max(10),
+    targets: z.record(z.string(), z.array(zoneSchema).min(1)),
+    startPositions: z.record(z.string(), vec2Schema).optional(),
+    solutionStepIndex: z.number().int().min(0).optional(),
+  }),
+  z.object({
+    ...challengeBase,
+    type: z.literal('predict'),
+    playerId: z.string(),
+    targets: z.array(zoneSchema).min(1),
+    answerStepIndex: z.number().int().min(0),
+    overrides: z.record(z.string(), vec2Schema).optional(),
+    ballHolderOverride: z.string().nullable().optional(),
+  }),
+  z.object({
+    ...challengeBase,
+    type: z.literal('choice'),
+    options: z.array(z.object({ id: z.string(), text: z.string().max(300) })).min(2).max(8),
+    correct: z.array(z.string()).min(1),
+    multiple: z.boolean(),
+  }),
+]);
+
+export const lessonSchema = z.object({
+  id: z.string().min(1).max(80),
+  title: z.string().max(100),
+  en: z.string().max(100),
+  category: z.enum(['offense', 'defense', 'transition']),
+  difficulty: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  summary: z.string().max(1000),
+  objectives: z.array(z.string().max(300)),
+  keyPoints: z.array(z.string().max(300)),
+  project: projectSchema,
+  challenges: z.array(challengeSchema).max(30),
+});
+
+export const assignmentSchema = z.object({
+  id: z.string().min(1),
+  code: z.string().regex(/^[A-Z0-9]{4,12}$/),
+  title: z.string().max(120),
+  message: z.string().max(1000),
+  lessonId: z.string(),
+  lesson: lessonSchema,
+  challengeIds: z.array(z.string()),
+  open: z.boolean(),
+  createdAt: z.string(),
+  ownerId: z.string().optional(),
+});
+
+const studentSchema = z.object({
+  className: z.string().trim().min(1).max(20),
+  seatNo: z.string().trim().min(1).max(10),
+  name: z.string().trim().min(1).max(30),
+});
+
+export const challengeResultSchema = z.object({
+  challengeId: z.string(),
+  type: z.enum(['placement', 'predict', 'choice']),
+  score: z.number().min(0),
+  maxScore: z.number().min(0),
+  correct: z.boolean(),
+  ratio: z.number().min(0).max(1),
+  details: z.record(z.string(), z.boolean()),
+  answer: z.union([
+    z.object({ type: z.literal('placement'), positions: z.record(z.string(), vec2Schema) }),
+    z.object({ type: z.literal('predict'), position: vec2Schema }),
+    z.object({ type: z.literal('choice'), selected: z.array(z.string()) }),
+  ]),
+  tries: z.number().int().min(1),
+});
+
+export const attemptSchema = z.object({
+  id: z.string().min(1),
+  assignmentId: z.string(),
+  assignmentCode: z.string(),
+  lessonId: z.string(),
+  student: studentSchema,
+  results: z.array(challengeResultSchema).max(30),
+  score: z.number().min(0),
+  maxScore: z.number().min(0),
+  submittedAt: z.string(),
+  teacherFeedback: z.string().max(2000),
+  feedbackAt: z.string().nullable(),
+  source: z.enum(['cloud', 'local']),
+});
+
+export function parseLesson(raw: unknown): ParseResult<Lesson> {
+  const r = lessonSchema.safeParse(raw);
+  return r.success ? { ok: true, value: r.data as Lesson } : { ok: false, errors: issues(r.error) };
+}
+
+export function parseAssignment(raw: unknown): ParseResult<Assignment> {
+  const r = assignmentSchema.safeParse(raw);
+  return r.success ? { ok: true, value: r.data as Assignment } : { ok: false, errors: issues(r.error) };
+}
+
+export const studentIdentitySchema = studentSchema;
+
+/** 學生離線作答的繳交檔（教師匯入） */
+export const resultFileSchema = z.object({
+  format: z.literal('basketball-tactics-lab/attempts'),
+  schemaVersion: z.literal(1),
+  attempts: z.array(attemptSchema).min(1).max(500),
+});
+
+export function parseResultFile(text: string): ParseResult<Attempt[]> {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return { ok: false, errors: ['不是有效的 JSON 檔案'] };
+  }
+  const r = resultFileSchema.safeParse(raw);
+  return r.success ? { ok: true, value: r.data.attempts as Attempt[] } : { ok: false, errors: issues(r.error) };
 }

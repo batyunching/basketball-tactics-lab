@@ -10,6 +10,7 @@
     "zod": "^3.25.0"
   },
   "devDependencies": {
-    "@btl/tactic-engine": "0.1.0"
+    "@btl/tactic-engine": "0.1.0",
+    "@btl/lesson-library": "0.1.0"
   }
 }

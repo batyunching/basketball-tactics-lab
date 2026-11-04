@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { describeEvent, movePlayer, segmentAt } from '@btl/tactic-engine';
 import { TopBar } from '../components/TopBar';
 import { CourtBoard } from '../features/court/CourtBoard';
@@ -10,6 +10,13 @@ import { StepPanel } from '../features/animation/StepPanel';
 import { usePlaybackLoop } from '../features/animation/usePlaybackLoop';
 import { bootstrap, startAutosave } from '../features/storage/persistence';
 import { useCurrentStep, useProject, useStore } from './store';
+import { isStudentRoute, useRoute, type Route } from './router';
+import { AssignmentsPage } from '../features/assignments/AssignmentsPage';
+import { CloudButton, CloudDialog } from '../features/cloud/CloudDialog';
+import { startCloud } from '../features/cloud/controller';
+import { LessonLibraryPage } from '../features/lessons/LessonLibraryPage';
+import { LessonPage } from '../features/lessons/LessonPage';
+import { StudentPage } from '../features/student/StudentPage';
 
 function isTyping(e: KeyboardEvent): boolean {
   const el = e.target as HTMLElement | null;
@@ -119,15 +126,12 @@ function ToastHost() {
   );
 }
 
-export function App() {
+/** 戰術白板（Phase 1） */
+export function WhiteboardPage() {
   const focusMode = useStore((s) => s.focusMode);
   const courtMode = useProject().court.mode;
   usePlaybackLoop();
   useShortcuts();
-  useEffect(() => {
-    void bootstrap();
-    return startAutosave();
-  }, []);
 
   return (
     <div className={`app ${focusMode ? 'focus' : ''}`} data-court={courtMode}>
@@ -147,7 +151,71 @@ export function App() {
       <footer className="bottom">
         <PlaybackBar />
       </footer>
-      <ToastHost />
     </div>
+  );
+}
+
+const NAV = [
+  { to: '/', label: '🏀 戰術白板', match: (r: Route) => r.segments.length === 0 },
+  { to: '/lessons', label: '📚 教材庫', match: (r: Route) => r.segments[0] === 'lessons' },
+  { to: '/teach', label: '👩‍🏫 學生任務', match: (r: Route) => r.segments[0] === 'teach' },
+];
+
+function NavBar({ route }: { route: Route }) {
+  return (
+    <nav className="navbar" aria-label="主選單">
+      <a className="nav-brand" href="#/">
+        <svg width="26" height="26" viewBox="0 0 64 64" aria-hidden>
+          <circle cx="32" cy="32" r="29" fill="#ee7b2c" stroke="#14213d" strokeWidth="3" />
+          <path d="M3 32h58M32 3v58M12 12c10 9 10 31 0 40M52 12c-10 9-10 31 0 40" fill="none" stroke="#14213d" strokeWidth="3" />
+        </svg>
+        <span>籃球戰術教學</span>
+      </a>
+      <div className="nav-links">
+        {NAV.map((n) => (
+          <a key={n.to} href={`#${n.to}`} className={n.match(route) ? 'is-on' : ''} aria-current={n.match(route) ? 'page' : undefined}>
+            {n.label}
+          </a>
+        ))}
+      </div>
+      <CloudButton />
+    </nav>
+  );
+}
+
+/** 教師端：白板、教材庫、任務管理共用本機資料與雲端同步 */
+function TeacherShell({ route }: { route: Route }) {
+  useEffect(() => {
+    void bootstrap();
+    startCloud();
+    return startAutosave();
+  }, []);
+  const [first, second] = route.segments;
+  let page: ReactNode;
+  if (first === 'lessons') page = second ? <LessonPage id={second} /> : <LessonLibraryPage />;
+  else if (first === 'teach') page = <AssignmentsPage route={route} />;
+  else page = <WhiteboardPage />;
+  return (
+    <div className={`shell ${first ? 'shell-page' : 'shell-board'}`}>
+      <NavBar route={route} />
+      {page}
+      <CloudDialog />
+    </div>
+  );
+}
+
+export function App() {
+  const route = useRoute();
+  return (
+    <>
+      {isStudentRoute(route) ? (
+        <div className="shell shell-page student-shell">
+          <StudentPage route={route} />
+        </div>
+      ) : (
+        <TeacherShell route={route} />
+      )}
+      <ToastHost />
+    </>
   );
 }

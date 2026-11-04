@@ -7,7 +7,15 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   base: process.env.VITE_BASE ?? './',
   plugins: [react()],
-  build: { target: 'es2020', sourcemap: true },
+  build: {
+    target: 'es2020',
+    sourcemap: true,
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => (id.includes('@supabase') ? 'supabase' : id.includes('node_modules/react') ? 'react' : undefined),
+      },
+    },
+  },
   test: {
     name: 'web',
     environment: 'jsdom',

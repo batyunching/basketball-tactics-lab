@@ -1,9 +1,9 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import type { Formation, TacticProject } from '@btl/shared-types';
+import type { Assignment, Attempt, Formation, TacticProject } from '@btl/shared-types';
 
 /**
- * 可替換的儲存介面：Phase 1 為 IndexedDB 實作；
- * Phase 2 可另寫 SupabaseRepository 並以同一介面接上同步佇列。
+ * 可替換的儲存介面：本機為 IndexedDB 實作；雲端同步由 SyncEngine 透過
+ * LocalSyncStore（本機）＋ RemoteProjectStore（Supabase）完成。
  */
 export interface ProjectSummary {
   id: string;
@@ -27,28 +27,78 @@ export interface TacticRepository {
   setMeta<T>(key: string, value: T): Promise<void>;
 }
 
+/** 待同步操作（離線時累積，連線後依序送出） */
 export interface SyncOperation {
   operationId: string;
   deviceId: string;
-  entity: 'project' | 'formation';
+  entity: 'project';
   entityId: string;
-  baseRevision: number;
-  syncStatus: 'pending' | 'synced' | 'conflict';
+  kind: 'upsert' | 'delete';
+  /** 送出時預期的雲端修訂版；null = 雲端還沒有這筆 */
+  baseRevision: number | null;
+  syncStatus: 'pending' | 'conflict';
   createdAt: string;
+  /** 被合併掉的舊操作 id：用來辨識「之前其實已送達」的寫入 */
+  priorOperationIds?: string[];
+}
+
+/** 本機記住「上次同步時雲端的修訂版」 */
+export interface SyncMeta {
+  entityId: string;
+  remoteRevision: number;
+  syncedAt: string;
+}
+
+export interface RemoteRecord {
+  id: string;
+  title: string;
+  data: TacticProject;
+  revision: number;
+  lastOperationId: string | null;
+  deleted: boolean;
+  updatedAt: string;
+}
+
+/** 同步衝突：兩份都保留，等老師選擇（不靜默覆寫） */
+export interface SyncConflict {
+  entityId: string;
+  local: TacticProject | null;
+  remote: RemoteRecord | null;
+  reason: 'both-changed' | 'remote-deleted' | 'local-deleted' | 'unsynced-duplicate';
+  detectedAt: string;
+}
+
+export interface LocalSyncStore {
+  getProject(id: string): Promise<TacticProject | undefined>;
+  /** 寫入雲端版本（不遞增本機 revision、不觸發同步） */
+  putProjectRaw(p: TacticProject): Promise<void>;
+  deleteProjectRaw(id: string): Promise<void>;
+  listOps(): Promise<SyncOperation[]>;
+  putOp(op: SyncOperation): Promise<void>;
+  deleteOpsFor(entityId: string): Promise<void>;
+  getSyncMeta(id: string): Promise<SyncMeta | undefined>;
+  setSyncMeta(m: SyncMeta): Promise<void>;
+  deleteSyncMeta(id: string): Promise<void>;
+  listConflicts(): Promise<SyncConflict[]>;
+  putConflict(c: SyncConflict): Promise<void>;
+  deleteConflict(id: string): Promise<void>;
 }
 
 interface BtlDB extends DBSchema {
   projects: { key: string; value: TacticProject; indexes: { updatedAt: string } };
   formations: { key: string; value: Formation };
   meta: { key: string; value: unknown };
-  /** 預留給 Phase 2 雲端同步佇列 */
   syncQueue: { key: string; value: SyncOperation };
+  syncMeta: { key: string; value: SyncMeta };
+  conflicts: { key: string; value: SyncConflict };
+  attempts: { key: string; value: Attempt; indexes: { assignmentCode: string } };
+  assignments: { key: string; value: Assignment };
 }
 
 export const DB_NAME = 'basketball-tactics-lab';
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 
-export class IndexedDbRepository implements TacticRepository {
+export class IndexedDbRepository implements TacticRepository, LocalSyncStore {
   private dbp: Promise<IDBPDatabase<BtlDB>> | null = null;
 
   constructor(private readonly name = DB_NAME) {}
@@ -56,18 +106,28 @@ export class IndexedDbRepository implements TacticRepository {
   private db(): Promise<IDBPDatabase<BtlDB>> {
     if (!this.dbp) {
       this.dbp = openDB<BtlDB>(this.name, DB_VERSION, {
-        upgrade(db) {
-          const projects = db.createObjectStore('projects', { keyPath: 'id' });
-          projects.createIndex('updatedAt', 'updatedAt');
-          db.createObjectStore('formations', { keyPath: 'id' });
-          db.createObjectStore('meta');
-          db.createObjectStore('syncQueue', { keyPath: 'operationId' });
+        upgrade(db, oldVersion) {
+          if (oldVersion < 1) {
+            const projects = db.createObjectStore('projects', { keyPath: 'id' });
+            projects.createIndex('updatedAt', 'updatedAt');
+            db.createObjectStore('formations', { keyPath: 'id' });
+            db.createObjectStore('meta');
+            db.createObjectStore('syncQueue', { keyPath: 'operationId' });
+          }
+          if (oldVersion < 2) {
+            db.createObjectStore('syncMeta', { keyPath: 'entityId' });
+            db.createObjectStore('conflicts', { keyPath: 'entityId' });
+            const attempts = db.createObjectStore('attempts', { keyPath: 'id' });
+            attempts.createIndex('assignmentCode', 'assignmentCode');
+            db.createObjectStore('assignments', { keyPath: 'id' });
+          }
         },
       });
     }
     return this.dbp;
   }
 
+  // ─────────── 戰術 ───────────
   async listProjects(): Promise<ProjectSummary[]> {
     const all = await (await this.db()).getAll('projects');
     return all
@@ -105,6 +165,15 @@ export class IndexedDbRepository implements TacticRepository {
     await (await this.db()).delete('projects', id);
   }
 
+  async putProjectRaw(p: TacticProject): Promise<void> {
+    await (await this.db()).put('projects', p);
+  }
+
+  async deleteProjectRaw(id: string): Promise<void> {
+    await (await this.db()).delete('projects', id);
+  }
+
+  // ─────────── 隊形、偏好 ───────────
   async listFormations(): Promise<Formation[]> {
     const list = await (await this.db()).getAll('formations');
     return list.sort((a, b) => a.order - b.order);
@@ -125,6 +194,74 @@ export class IndexedDbRepository implements TacticRepository {
   async setMeta<T>(key: string, value: T): Promise<void> {
     await (await this.db()).put('meta', value, key);
   }
+
+  // ─────────── 同步佇列 ───────────
+  async listOps(): Promise<SyncOperation[]> {
+    const ops = await (await this.db()).getAll('syncQueue');
+    return ops.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async putOp(op: SyncOperation): Promise<void> {
+    await (await this.db()).put('syncQueue', op);
+  }
+
+  async deleteOpsFor(entityId: string): Promise<void> {
+    const db = await this.db();
+    const tx = db.transaction('syncQueue', 'readwrite');
+    for (const op of await tx.store.getAll()) if (op.entityId === entityId) await tx.store.delete(op.operationId);
+    await tx.done;
+  }
+
+  async getSyncMeta(id: string): Promise<SyncMeta | undefined> {
+    return (await this.db()).get('syncMeta', id);
+  }
+
+  async setSyncMeta(m: SyncMeta): Promise<void> {
+    await (await this.db()).put('syncMeta', m);
+  }
+
+  async deleteSyncMeta(id: string): Promise<void> {
+    await (await this.db()).delete('syncMeta', id);
+  }
+
+  async listConflicts(): Promise<SyncConflict[]> {
+    return (await this.db()).getAll('conflicts');
+  }
+
+  async putConflict(c: SyncConflict): Promise<void> {
+    await (await this.db()).put('conflicts', c);
+  }
+
+  async deleteConflict(id: string): Promise<void> {
+    await (await this.db()).delete('conflicts', id);
+  }
+
+  // ─────────── 本機任務與作答（未設定雲端時使用） ───────────
+  async listAttempts(): Promise<Attempt[]> {
+    const list = await (await this.db()).getAll('attempts');
+    return list.sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
+  }
+
+  async putAttempt(a: Attempt): Promise<void> {
+    await (await this.db()).put('attempts', a);
+  }
+
+  async deleteAttempt(id: string): Promise<void> {
+    await (await this.db()).delete('attempts', id);
+  }
+
+  async listLocalAssignments(): Promise<Assignment[]> {
+    const list = await (await this.db()).getAll('assignments');
+    return list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async putLocalAssignment(a: Assignment): Promise<void> {
+    await (await this.db()).put('assignments', a);
+  }
+
+  async deleteLocalAssignment(id: string): Promise<void> {
+    await (await this.db()).delete('assignments', id);
+  }
 }
 
-export const repository: TacticRepository = new IndexedDbRepository();
+export const repository = new IndexedDbRepository();
