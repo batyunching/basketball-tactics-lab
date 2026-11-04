@@ -7,7 +7,7 @@ export default defineConfig({
   reporter: [['list']],
   use: { baseURL: 'http://localhost:4173', trace: 'retain-on-failure' },
   webServer: {
-    command: 'npm run build && npm run preview',
+    command: 'VITE_SUPABASE_URL=off npm run build && npm run preview',
     url: 'http://localhost:4173',
     reuseExistingServer: true,
     timeout: 120_000,
