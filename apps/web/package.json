@@ -1,0 +1,33 @@
+{
+  "name": "@btl/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 4173 --strictPort",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "e2e": "playwright test"
+  },
+  "dependencies": {
+    "@btl/data-schemas": "0.1.0",
+    "@btl/shared-types": "0.1.0",
+    "@btl/tactic-engine": "0.1.0",
+    "idb": "^8.0.3",
+    "immer": "^10.1.1",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "zustand": "^5.0.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@testing-library/react": "^16.3.0",
+    "@types/react": "^19.1.6",
+    "@types/react-dom": "^19.1.5",
+    "@vitejs/plugin-react": "^4.5.0",
+    "fake-indexeddb": "^6.0.1",
+    "jsdom": "^26.1.0",
+    "vite": "^6.3.5"
+  }
+}

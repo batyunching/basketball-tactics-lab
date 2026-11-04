@@ -1,0 +1,10 @@
+{
+  "name": "籃球戰術教學白板",
+  "short_name": "戰術白板",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f1ea",
+  "theme_color": "#14213d",
+  "icons": [{ "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

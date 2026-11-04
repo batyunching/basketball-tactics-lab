@@ -1,0 +1,29 @@
+{
+  "name": "basketball-tactics-lab",
+  "private": true,
+  "version": "0.1.0",
+  "description": "籃球戰術教學與 AI 影片分析系統 — Phase 1 教師戰術白板",
+  "type": "module",
+  "workspaces": [
+    "apps/web",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @btl/web",
+    "build": "npm run typecheck && npm run build -w @btl/web",
+    "preview": "npm run preview -w @btl/web",
+    "typecheck": "tsc -p tsconfig.json --noEmit && npm run typecheck -w @btl/web",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "e2e": "npm run e2e -w @btl/web"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "~5.8.3",
+    "vitest": "^3.2.4",
+    "vite": "^6.3.5"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "@btl/tactic-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "@btl/shared-types": "0.1.0",
+    "immer": "^10.1.1"
+  }
+}
