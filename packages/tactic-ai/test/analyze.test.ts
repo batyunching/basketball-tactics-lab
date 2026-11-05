@@ -98,7 +98,7 @@ describe('證據不足時明確說無法確認', () => {
     const r = analyzeTactics({ players: players(3), samples: s.samples, possession: s.possession, shots: s.shots.map((x) => ({ ...x, confirmed: false })), startMs: 0, endMs: s.endMs });
     const sc = r.events.find((e) => e.type === 'score')!;
     expect(sc.confidence).toBe('insufficient');
-    expect(sc.insufficientReason).toMatch(/系統不會自行判斷得分/);
+    expect(sc.insufficientReason).toMatch(/老師確認後才算得分/);
     expect(r.scoringKeys).toHaveLength(0);
   });
 

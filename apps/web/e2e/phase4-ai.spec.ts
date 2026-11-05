@@ -167,6 +167,7 @@ test('教師確認球權與得分 → AI 分析 → 審核修改 → 轉成教�
   await page.getByTestId('custom-lessons').getByRole('button', { name: /發布/ }).first().click();
   await page.getByTestId('asg-title').fill('803 傳切');
   await page.getByTestId('asg-publish').click();
+  await expect(page.getByTestId('share-link')).toHaveValue(/#\/p\/custom.*d=/);
   const link = await page.getByTestId('share-link').inputValue();
   expect(link).toContain('#/p/custom');
   expect(link).toContain('d=');

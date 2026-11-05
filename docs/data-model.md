@@ -51,3 +51,15 @@
 ## 版本遷移
 
 `migrateBundle()` 依 `schemaVersion` 轉換；遇到不支援的版本拒絕匯入並提示，不會靜默覆寫。
+
+## 影片分析（只存在本機 IndexedDB `analyses`）
+
+`VideoAnalysis` 另有兩個籃球相關欄位（舊資料沒有時視為空，不需轉換）：
+
+- `hoop: { x, y, w, source: 'manual' | 'suggested' } | null`：籃框在影片上的位置（像素）與寬度。
+- `ball: { version, fps, frames, points, shots, coverage, analyzedAt } | null`：
+  - `frames[]`：每個取樣時間的籃球候選 `{ x, y, r, score, source: 'color' | 'model' }`（只存候選，持球與出手每次依最新的軌跡、背號指派與籃框重新計算）。
+  - `points[]`：追蹤後的球 `{ timeMs, x, y, r, score, source: 'observed' | 'interpolated', holderTrackId }`。
+  - `shots[]`：`{ releaseMs, rimMs, shooterTrackId, result: 'made' | 'missed' | 'unknown', confidence, evidence[] }`。
+
+AI 戰術分析的標記（`aiStates`）新增選填欄位：`source: 'teacher' | 'ball-tracking'`、`autoConfidence`；出手另有 `undetermined`（系統無法判定）與 `autoEvidence`（籃球軌跡依據）。

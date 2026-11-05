@@ -1,0 +1,68 @@
+[
+  {
+    "fps": 5,
+    "noisePx": 0,
+    "drop": 0,
+    "shotFound": 1,
+    "madeCorrect": 1,
+    "missedCorrect": 1,
+    "falseMade": 0,
+    "unknownRate": 0,
+    "meanErrPx": 0.01
+  },
+  {
+    "fps": 10,
+    "noisePx": 0,
+    "drop": 0,
+    "shotFound": 1,
+    "madeCorrect": 1,
+    "missedCorrect": 1,
+    "falseMade": 0,
+    "unknownRate": 0,
+    "meanErrPx": 0.01
+  },
+  {
+    "fps": 10,
+    "noisePx": 2,
+    "drop": 0.15,
+    "shotFound": 1,
+    "madeCorrect": 0.933,
+    "missedCorrect": 1,
+    "falseMade": 0,
+    "unknownRate": 0.033,
+    "meanErrPx": 1.59
+  },
+  {
+    "fps": 10,
+    "noisePx": 4,
+    "drop": 0.3,
+    "shotFound": 1,
+    "madeCorrect": 0.933,
+    "missedCorrect": 1,
+    "falseMade": 0,
+    "unknownRate": 0.033,
+    "meanErrPx": 3.4
+  },
+  {
+    "fps": 30,
+    "noisePx": 2,
+    "drop": 0.15,
+    "shotFound": 1,
+    "madeCorrect": 1,
+    "missedCorrect": 1,
+    "falseMade": 0,
+    "unknownRate": 0,
+    "meanErrPx": 1.54
+  },
+  {
+    "fps": 30,
+    "noisePx": 4,
+    "drop": 0.3,
+    "shotFound": 1,
+    "madeCorrect": 1,
+    "missedCorrect": 1,
+    "falseMade": 0,
+    "unknownRate": 0,
+    "meanErrPx": 3.08
+  }
+]

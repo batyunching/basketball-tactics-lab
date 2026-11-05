@@ -74,6 +74,7 @@ test('教師發布本機連結 → 學生用手機作答繳交 → 教師匯入�
   await page.goto('/#/teach?lesson=man-to-man-help');
   await page.getByTestId('asg-title').fill('802 人盯人');
   await page.getByTestId('asg-publish').click();
+  await expect(page.getByTestId('share-link')).toHaveValue(/#\/p\//);
   const link = await page.getByTestId('share-link').inputValue();
   const code = (await page.getByTestId('share-code').textContent())!.trim();
   expect(link).toContain('#/p/man-to-man-help');

@@ -7,6 +7,8 @@ import type { Detection } from './types';
  */
 export const YOLOX_INPUT = 416;
 export const COCO_PERSON = 0;
+/** COCO 類別 32：sports ball（籃球在畫面中常太小，模型不一定偵測得到） */
+export const COCO_SPORTS_BALL = 32;
 
 export interface Letterbox {
   scale: number;

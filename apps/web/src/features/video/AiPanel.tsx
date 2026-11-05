@@ -14,7 +14,7 @@ import {
   type TacticalEvent,
   type TacticalEventType,
 } from '@btl/tactic-ai';
-import type { PlayerSample, VideoAnalysis, VideoAsset } from '@btl/video-engine';
+import { possessionRuns, type BallAnalysis, type PlayerSample, type VideoAnalysis, type VideoAsset } from '@btl/video-engine';
 import { navigate } from '../../app/router';
 import { useStore } from '../../app/store';
 import { TEAM_FILL, TEAM_LABEL } from '../players/PlayerToken';
@@ -30,6 +30,8 @@ interface Props {
   players: PlayerDef[];
   time: number;
   onJump: (ms: number) => void;
+  /** 籃球追蹤結果（可匯入成待確認的球權與出手） */
+  ball?: BallAnalysis | null;
 }
 
 function pname(players: PlayerDef[], id: string | null | undefined) {
@@ -39,7 +41,7 @@ function pname(players: PlayerDef[], id: string | null | undefined) {
 }
 
 /** ⑦ AI 戰術分析：教師確認球權與得分 → 規則式分析 → 教師審核編輯 → 轉成學生教材 */
-export function AiPanel({ asset, analysis, samples, players, time, onJump }: Props) {
+export function AiPanel({ asset, analysis, samples, players, time, onJump, ball }: Props) {
   const [state, setState] = useState<AiState | null>(null);
   const [holderPick, setHolderPick] = useState<string>(players[0]?.id ?? '');
   const [shooterPick, setShooterPick] = useState<string>(players[0]?.id ?? '');
@@ -76,6 +78,49 @@ export function AiPanel({ asset, analysis, samples, players, time, onJump }: Pro
     patch({ possession: [...state.possession, ...marks.filter((m) => !existing.has(m.timeMs))].sort((a, b) => a.timeMs - b.timeMs) });
     useStore.getState().showToast(`從關鍵影格加入 ${marks.length} 個球權標記（請逐一確認）`);
   };
+
+  /** 籃球追蹤 → 待確認的球權與出手標記（只匯入已指派背號的球員） */
+  const importFromBall = () => {
+    if (!ball) return;
+    const toPlayer = (trackId: string | null) => {
+      const pid = trackId ? analysis.assignments[trackId] : undefined;
+      return pid && pid !== 'ignore' && players.some((p) => p.id === pid) ? pid : null;
+    };
+    const runs = possessionRuns(ball.points);
+    let skipped = 0;
+    const pos: PossessionMark[] = [];
+    for (const r of runs) {
+      const pid = toPlayer(r.trackId);
+      if (!pid) {
+        skipped++;
+        continue;
+      }
+      if (pos.length && pos[pos.length - 1]!.holderId === pid) continue;
+      pos.push({ id: uid('pos'), timeMs: r.startMs, holderId: pid, confirmed: false, source: 'ball-tracking', autoConfidence: r.confidence });
+    }
+    const shots: ShotMark[] = [];
+    for (const sh of ball.shots) {
+      const pid = toPlayer(sh.shooterTrackId);
+      if (!pid) {
+        skipped++;
+        continue;
+      }
+      shots.push({ id: uid('shot'), timeMs: sh.releaseMs, shooterId: pid, made: sh.result === 'made', confirmed: false, source: 'ball-tracking', autoConfidence: sh.confidence, undetermined: sh.result === 'unknown', autoEvidence: sh.evidence });
+    }
+    // 取代先前匯入、尚未確認的系統標記；保留老師自己的標記與已確認的
+    const keep = <T extends { source?: string; confirmed: boolean }>(l: T[]) => l.filter((m) => m.source !== 'ball-tracking' || m.confirmed);
+    patch({
+      possession: [...keep(state.possession), ...pos.filter((m) => !state.possession.some((x) => x.confirmed && Math.abs(x.timeMs - m.timeMs) < 400))].sort((a, b) => a.timeMs - b.timeMs),
+      shots: [...keep(state.shots), ...shots.filter((m) => !state.shots.some((x) => x.confirmed && Math.abs(x.timeMs - m.timeMs) < 600))].sort((a, b) => a.timeMs - b.timeMs),
+    });
+    useStore.getState().showToast(`已匯入 ${pos.length} 個球權、${shots.length} 次出手（請逐一確認）${skipped ? `；${skipped} 筆因球員尚未指派背號而略過` : ''}`);
+  };
+  const confirmAuto = (level: 'high') =>
+    patch({
+      possession: state.possession.map((m) => (m.source === 'ball-tracking' && m.autoConfidence === level ? { ...m, confirmed: true } : m)),
+      shots: state.shots.map((m) => (m.source === 'ball-tracking' && m.autoConfidence === level && !m.undetermined ? { ...m, confirmed: true } : m)),
+    });
+  const autoCount = state.possession.filter((m) => m.source === 'ball-tracking' && !m.confirmed && m.autoConfidence === 'high').length + state.shots.filter((m) => m.source === 'ball-tracking' && !m.confirmed && m.autoConfidence === 'high' && !m.undetermined).length;
 
   const run = () => {
     const report = analyzeTactics({ players, samples, possession: state.possession, shots: state.shots, startMs: asset.trimStartMs, endMs: asset.trimEndMs });
@@ -121,7 +166,21 @@ export function AiPanel({ asset, analysis, samples, players, time, onJump }: Pro
     <>
       <section className="panel-section">
         <h2>1. 教師確認球權與得分</h2>
-        <p className="muted small">系統不追蹤球，也不會自己判斷進球。請暫停在球換手、出手的畫面，標記「誰持球」與「出手結果」。AI 只依據你確認過的球權與得分分析。</p>
+        <p className="muted small">AI 只依據老師確認過的球權與得分分析。可以按「匯入籃球追蹤結果」讓系統先填好（持球者、出手、進球與否），再逐一確認；也可以暫停在球換手、出手的畫面自己標記。</p>
+        {ball ? (
+          <div className="btn-row">
+            <button type="button" className="btn small primary" onClick={importFromBall} data-testid="ai-import-ball">
+              🏀 匯入籃球追蹤結果（{ball.shots.length} 次出手）
+            </button>
+            {autoCount > 0 && (
+              <button type="button" className="btn small" onClick={() => confirmAuto('high')} data-testid="ai-confirm-high">
+                ✅ 確認全部高信心的系統標記（{autoCount}）
+              </button>
+            )}
+          </div>
+        ) : (
+          <p className="muted small">尚未追蹤籃球：可在「③ 自動追蹤」勾選「同時追蹤籃球」，或在下方手動標記。</p>
+        )}
         <div className="mark-row">
           <span className="muted small">目前 {fmtSec(time)}</span>
           <select value={holderPick} onChange={(e) => setHolderPick(e.target.value)} aria-label="持球者" data-testid="ai-holder">
@@ -165,12 +224,32 @@ export function AiPanel({ asset, analysis, samples, players, time, onJump }: Pro
                   {fmtSec(m.timeMs)}
                 </button>
                 <span className="small" style={{ flex: 1 }}>
-                  {kind === 'pos' ? `🏀 ${pname(players, (m as PossessionMark).holderId)} 持球` : `🎯 ${pname(players, (m as ShotMark).shooterId)} 出手・${(m as ShotMark).made ? '進球' : '未進'}`}
+                  {kind === 'pos' ? `🏀 ${pname(players, (m as PossessionMark).holderId)} 持球` : `🎯 ${pname(players, (m as ShotMark).shooterId)} 出手・`}
+                  {kind === 'shot' && (
+                    <select
+                      className="inline-select"
+                      value={(m as ShotMark).undetermined && !m.confirmed ? '?' : (m as ShotMark).made ? 'made' : 'missed'}
+                      aria-label="出手結果"
+                      data-testid="ai-shot-result"
+                      onChange={(e) => patch({ shots: state.shots.map((x) => (x.id === m.id ? { ...x, made: e.target.value === 'made', undetermined: e.target.value === '?' } : x)) })}
+                    >
+                      {(m as ShotMark).undetermined && <option value="?">系統無法判定，請選擇</option>}
+                      <option value="made">進球</option>
+                      <option value="missed">未進</option>
+                    </select>
+                  )}
+                  {m.source === 'ball-tracking' && (
+                    <span className={`badge auto conf-${m.autoConfidence}`} title={(m as ShotMark).autoEvidence?.join(' ') ?? ''}>
+                      🤖 系統偵測・信心{m.autoConfidence === 'high' ? '高' : m.autoConfidence === 'medium' ? '中' : '低'}
+                    </span>
+                  )}
                 </span>
                 <label className="check small">
                   <input
                     type="checkbox"
                     checked={m.confirmed}
+                    disabled={kind === 'shot' && !!(m as ShotMark).undetermined && !m.confirmed}
+                    title={kind === 'shot' && (m as ShotMark).undetermined ? '請先選擇進球或未進' : ''}
                     aria-label="教師確認"
                     onChange={(e) =>
                       kind === 'pos'

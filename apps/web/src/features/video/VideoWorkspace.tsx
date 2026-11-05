@@ -21,6 +21,14 @@ import {
   sampleTimes,
   solveHomography,
   trajectoriesToTactic,
+  analyzeBall,
+  ballAt,
+  hoopWidthPx,
+  possessionRuns,
+  suggestHoop,
+  type BallAnalysis,
+  type HoopMark,
+  type ShotDetection,
   type Calibration,
   type FrameDetections,
   type Keyframe,
@@ -38,6 +46,7 @@ import { repository } from '../storage/db';
 import { downloadBlob, openAsNewProject } from '../storage/persistence';
 import { MODEL_VERSION, detectPlayers } from './detector';
 import { AiPanel } from './AiPanel';
+import { BALL_STAGE_LABEL, estimateBallSec, recommendedBallFps, runBallAnalysis, type BallStage } from './ballPipeline';
 
 const STEPS = ['① 片段', '② 球場校正', '③ 自動追蹤', '④ 身分校正', '⑤ 人工關鍵影格', '⑥ 對照回放', '⑦ AI 戰術分析'] as const;
 const sec = (ms: number) => (ms / 1000).toFixed(1);
@@ -64,6 +73,7 @@ export function VideoWorkspace({ id }: { id: string }) {
   // 校正點選擇、人工放置的球員
   const [calLandmark, setCalLandmark] = useCalState();
   const [armed, setArmed] = useState<string | null>(null);
+  const [hoopPicking, setHoopPicking] = useState(false);
 
   // 載入
   useEffect(() => {
@@ -144,6 +154,14 @@ export function VideoWorkspace({ id }: { id: string }) {
     [analysis, players, times, fps],
   );
 
+  // 籃球：偵測結果（候選）存起來；追蹤、持球、出手每次依最新的軌跡與籃框重新計算
+  const ball = useMemo<BallAnalysis | null>(() => {
+    const b = analysis?.ball;
+    if (!b || !b.frames.length || !asset) return null;
+    return analyzeBall(b.frames, analysis.tracks, analysis.hoop ?? null, asset.height || 720, b.fps);
+  }, [analysis?.ball, analysis?.tracks, analysis?.hoop, asset]);
+  const hoopSuggestion = useMemo<HoopMark | null>(() => (analysis ? suggestHoop(analysis.calibration?.homography ?? null, analysis.tracks) : null), [analysis?.calibration, analysis?.tracks]);
+
   if (missing) {
     return (
       <div className="page">
@@ -223,6 +241,12 @@ export function VideoWorkspace({ id }: { id: string }) {
   const onOverlayClick = (e: MouseEvent<SVGSVGElement>) => {
     const px = toImagePx(e);
     if (!px) return;
+    if (step === 1 && hoopPicking) {
+      const w = analysis.hoop?.w ?? hoopSuggestion?.w ?? hoopWidthPx(H) ?? Math.round(W * 0.03);
+      patch({ hoop: { x: Math.round(px.x), y: Math.round(px.y), w, source: 'manual' } });
+      setHoopPicking(false);
+      return;
+    }
     if (step === 1 && calLandmark) {
       const lm = HALF_COURT_LANDMARKS.find((l) => l.id === calLandmark)!;
       const pts = (analysis.calibration?.points ?? []).filter((p) => p.landmarkId !== lm.id);
@@ -251,7 +275,12 @@ export function VideoWorkspace({ id }: { id: string }) {
   const uncertainNow = Object.entries(nowSamples)
     .filter(([, s]) => s.positionSource !== 'manual' && (s.flags.some((f) => f !== 'interpolated') || s.identityConfidence < 0.6))
     .map(([k]) => k);
-  const holderNow = [...analysis.keyframes].reverse().find((k) => k.timeMs <= time + 60 && k.holderId !== undefined)?.holderId ?? null;
+  const kfHolder = [...analysis.keyframes].reverse().find((k) => k.timeMs <= time + 60 && k.holderId !== undefined);
+  const ballNow = ball ? ballAt(ball.points, time, 1000 / Math.max(2, ball.fps)) : null;
+  const ballHolderPlayer = ballNow?.holderTrackId ? analysis.assignments[ballNow.holderTrackId] : undefined;
+  const holderNow = kfHolder ? (kfHolder.holderId ?? null) : ballHolderPlayer && ballHolderPlayer !== 'ignore' ? ballHolderPlayer : null;
+  const shotNow = ball?.shots.find((s) => time >= s.releaseMs && time <= s.rimMs + 1500);
+  const hoop = analysis.hoop ?? null;
 
   return (
     <div className="page video-page" data-testid="video-workspace">
@@ -293,7 +322,7 @@ export function VideoWorkspace({ id }: { id: string }) {
             />
             <svg
               ref={svgRef}
-              className={`video-overlay ${(step === 1 && calLandmark) || (step === 4 && armed) ? 'picking' : ''}`}
+              className={`video-overlay ${(step === 1 && (calLandmark || hoopPicking)) || (step === 4 && armed) ? 'picking' : ''}`}
               viewBox={`0 0 ${W} ${Hh}`}
               preserveAspectRatio="xMidYMid meet"
               onClick={onOverlayClick}
@@ -330,6 +359,20 @@ export function VideoWorkspace({ id }: { id: string }) {
                 rawNow?.boxes
                   .filter((b) => !boxesNow.some(({ p }) => Math.abs(p.box.x - b.x) < 1 && Math.abs(p.box.y - b.y) < 1))
                   .map((b, i) => <rect key={`raw-${i}`} x={b.x} y={b.y} width={b.w} height={b.h} fill="none" stroke="#ffffff" strokeOpacity={0.5} strokeWidth={W / 900} />)}
+              {step === 1 && !hoop && hoopSuggestion && (
+                <ellipse cx={hoopSuggestion.x} cy={hoopSuggestion.y} rx={hoopSuggestion.w / 2} ry={hoopSuggestion.w / 6} fill="none" stroke="#f5b700" strokeWidth={W / 600} strokeDasharray={`${W / 200} ${W / 300}`} data-testid="hoop-suggestion" />
+              )}
+              {step >= 1 && hoop && (
+                <g data-testid="hoop-mark">
+                  <ellipse cx={hoop.x} cy={hoop.y} rx={hoop.w / 2} ry={hoop.w / 6} fill="none" stroke={hoop.source === 'manual' ? '#3ddc84' : '#f5b700'} strokeWidth={W / 500} />
+                  {step === 1 && (
+                    <text x={hoop.x} y={hoop.y - hoop.w * 0.5} textAnchor="middle" fontSize={W / 70} fontWeight={800} fill="#fff" stroke="#000" strokeWidth={W / 1600} paintOrder="stroke">
+                      籃框
+                    </text>
+                  )}
+                </g>
+              )}
+              {step >= 2 && ball && <BallOverlay ball={ball} time={time} W={W} shot={shotNow} hoop={hoop} />}
             </svg>
           </div>
           <div className="viewer-controls" role="toolbar" aria-label="影片播放">
@@ -401,17 +444,32 @@ export function VideoWorkspace({ id }: { id: string }) {
             </div>
           )}
           {step === 0 && <TrimPanel asset={asset} time={time} onChange={(t) => setAsset({ ...asset, ...t })} hasFrames={analysis.frames.length > 0} />}
-          {step === 1 && <CalibrationPanel calibration={analysis.calibration} current={calLandmark} onPick={setCalLandmark} onSet={setCalibration} />}
+          {step === 1 && (
+            <>
+              <CalibrationPanel calibration={analysis.calibration} current={calLandmark} onPick={(id) => { setHoopPicking(false); setCalLandmark(id); }} onSet={setCalibration} />
+              <HoopPanel
+                hoop={hoop}
+                suggestion={hoopSuggestion}
+                picking={hoopPicking}
+                hasCalibration={!!H}
+                onPick={() => { setCalLandmark(null); setHoopPicking(!hoopPicking); }}
+                onSet={(h) => patch({ hoop: h })}
+              />
+            </>
+          )}
           {step === 2 && (
             <TrackingPanel
               asset={asset}
               url={url}
               analysis={analysis}
-              onDone={(frames, fpsUsed) => {
-                const tracks = projectTracks(runTracker(frames), H);
-                patch({ frames, tracks, sampleFps: fpsUsed, status: 'done', modelVersion: MODEL_VERSION, analyzedAt: new Date().toISOString(), error: null, assignments: {}, reviews: {} });
+              onDone={(frames, tracks, fpsUsed, ballResult, hoopUsed) => {
+                patch({ frames, tracks, sampleFps: fpsUsed, status: 'done', modelVersion: MODEL_VERSION, analyzedAt: new Date().toISOString(), error: null, assignments: {}, reviews: {}, ...(ballResult ? { ball: ballResult } : {}), ...(hoopUsed && !analysis.hoop ? { hoop: hoopUsed } : {}) });
                 if (tracks.length) setStep(3);
               }}
+              onBall={(b) => patch({ ball: b })}
+              ball={ball}
+              hoop={hoop}
+              onJump={seekTo}
               onFail={(status, error) => patch({ status, error })}
               samples={samples}
               times={times}
@@ -449,7 +507,8 @@ export function VideoWorkspace({ id }: { id: string }) {
               nowSamples={nowSamples}
             />
           )}
-          {step === 6 && <AiPanel asset={asset} analysis={analysis} samples={samples} players={players} time={time} onJump={seekTo} />}
+          {step === 5 && analysis.ball && <BallSummary ball={ball} hoop={hoop} analysis={analysis} onJump={seekTo} />}
+          {step === 6 && <AiPanel asset={asset} analysis={analysis} samples={samples} players={players} time={time} onJump={seekTo} ball={ball} />}
         </div>
       </div>
     </div>
@@ -575,34 +634,72 @@ function TrackingPanel({
   analysis,
   onDone,
   onFail,
+  onBall,
   samples,
   times,
+  ball,
+  hoop,
+  onJump,
 }: {
   asset: VideoAsset;
   url: string;
   analysis: VideoAnalysis;
-  onDone: (frames: FrameDetections[], fps: number) => void;
+  onDone: (frames: FrameDetections[], tracks: Track[], fps: number, ball: BallAnalysis | null, hoopUsed: HoopMark | null) => void;
   onFail: (status: 'failed' | 'cancelled', error: string) => void;
+  onBall: (b: BallAnalysis) => void;
   samples: Record<string, PlayerSample[]>;
   times: number[];
+  ball: BallAnalysis | null;
+  hoop: HoopMark | null;
+  onJump: (ms: number) => void;
 }) {
   const clipMs = asset.trimEndMs - asset.trimStartMs;
   const [fps, setFps] = useState(analysis.status === 'done' ? analysis.sampleFps : recommendedFps(clipMs));
-  const [progress, setProgress] = useState<{ done: number; total: number; people: number } | null>(null);
+  const [withBall, setWithBall] = useState(true);
+  const [progress, setProgress] = useState<{ label: string; done: number; total: number; note: string } | null>(null);
   const ctrl = useRef<AbortController | null>(null);
   const running = progress !== null;
   const est = Math.round(((asset.trimEndMs - asset.trimStartMs) / 1000) * fps);
+  const ballFps = recommendedBallFps(clipMs);
+  const H = analysis.calibration?.homography ?? null;
+
+  const ballStep = async (tracks: Track[], frames: FrameDetections[], signal: AbortSignal) => {
+    // 沒有標記籃框時，先用校正＋球員身高估一個建議位置（之後可在 ② 修正）
+    const hoopUsed = hoop ?? suggestHoop(H, tracks);
+    const b = await runBallAnalysis({
+      url,
+      asset,
+      frameH: asset.height || 720,
+      playerFrames: frames,
+      tracks,
+      hoop: hoopUsed,
+      signal,
+      onProgress: (stage: BallStage, done, total) => setProgress({ label: `籃球：${BALL_STAGE_LABEL[stage]}`, done, total, note: '' }),
+    });
+    return { b, hoopUsed };
+  };
 
   const run = async () => {
     ctrl.current = new AbortController();
-    setProgress({ done: 0, total: est, people: 0 });
+    setProgress({ label: '偵測球員', done: 0, total: est, note: '' });
     try {
       const frames = await detectPlayers(url, asset, {
         fps,
         signal: ctrl.current.signal,
-        onProgress: (done, total, last) => setProgress({ done, total, people: last.boxes.length }),
+        onProgress: (done, total, last) => setProgress({ label: '偵測球員', done, total, note: `這張找到 ${last.boxes.length} 人` }),
       });
-      onDone(frames, fps);
+      const tracks = projectTracks(runTracker(frames), H);
+      let b: BallAnalysis | null = null;
+      let hoopUsed: HoopMark | null = null;
+      if (withBall) {
+        try {
+          ({ b, hoopUsed } = await ballStep(tracks, frames, ctrl.current.signal));
+        } catch (e) {
+          if ((e as Error).name === 'AbortError') throw e;
+          useStore.getState().showToast(`籃球追蹤失敗：${(e as Error).message}（球員追蹤結果仍保留）`, 'error');
+        }
+      }
+      onDone(frames, tracks, fps, b, hoopUsed);
     } catch (e) {
       const cancelled = (e as Error).name === 'AbortError';
       onFail(cancelled ? 'cancelled' : 'failed', cancelled ? '已取消' : (e as Error).message);
@@ -613,11 +710,26 @@ function TrackingPanel({
     }
   };
 
+  const runBallOnly = async () => {
+    ctrl.current = new AbortController();
+    setProgress({ label: '籃球', done: 0, total: 1, note: '' });
+    try {
+      const { b } = await ballStep(analysis.tracks, analysis.frames, ctrl.current.signal);
+      onBall(b);
+      useStore.getState().showToast(`籃球追蹤完成：找到 ${b.shots.length} 次出手`);
+    } catch (e) {
+      if ((e as Error).name !== 'AbortError') useStore.getState().showToast(`籃球追蹤失敗：${(e as Error).message}`, 'error');
+    } finally {
+      setProgress(null);
+      ctrl.current = null;
+    }
+  };
+
   const q = analysis.status === 'done' ? qualityReport(analysis.frames, analysis.tracks, analysis.assignments, samples, times.length) : null;
   return (
     <Panel title="自動偵測與追蹤">
       <p className="muted small">
-        在你的電腦上用 YOLOX 模型逐格找人，再追蹤每個人的移動、以背心顏色判斷隊伍。第一次會下載約 20MB 的模型。結果都會標示信心與不確定處，請在下一步人工確認。分析期間請保持這個分頁開著。
+        在你的電腦上用 YOLOX 模型逐格找人，再追蹤每個人的移動、以背心顏色判斷隊伍；也可以同時找出籃球、判斷誰持球與是否進球。第一次會下載約 20MB 的模型。結果都會標示信心與不確定處，請在下一步人工確認。分析期間請保持這個分頁開著。
       </p>
       {!analysis.calibration?.homography && <p className="form-error small">尚未校正球場：可以先追蹤，但要完成校正後才能換算球場位置。</p>}
       {!asset.consent && <p className="form-error small">此影片匯入時未勾選授權確認，請確認已取得授權再分析。</p>}
@@ -631,11 +743,17 @@ function TrackingPanel({
           ))}
         </select>
       </label>
+      <label className="check" style={{ margin: '6px 0' }}>
+        <input type="checkbox" checked={withBall} disabled={running} onChange={(e) => setWithBall(e.target.checked)} data-testid="track-ball" />
+        同時追蹤籃球、判斷持球與是否進球（每秒 {ballFps} 張，籃框附近每秒 30 張；約多 {fmtDuration(estimateBallSec(clipMs, ballFps))}）
+      </label>
+      {withBall && !hoop && <p className="muted small">尚未標記籃框：系統會依球場校正估計籃框位置；建議先到「② 球場校正」點一下籃框，進球判斷會更準。</p>}
       {running ? (
         <div data-testid="track-progress">
           <progress max={progress.total} value={progress.done} style={{ width: '100%' }} />
           <p className="small">
-            分析中 {progress.done} / {progress.total} 張，這張找到 {progress.people} 人…
+            {progress.label}：{progress.done} / {progress.total}
+            {progress.note ? `，${progress.note}` : ''}…
           </p>
           <button type="button" className="btn small" onClick={() => ctrl.current?.abort()}>
             取消
@@ -664,6 +782,136 @@ function TrackingPanel({
           )}
         </div>
       )}
+      {analysis.status === 'done' && (
+        <BallSummary ball={ball} hoop={hoop} analysis={analysis} onJump={onJump}>
+          {!running && (
+            <button type="button" className="btn small" onClick={() => void runBallOnly()} data-testid="ball-run">
+              {analysis.ball ? '重新分析籃球（保留球員追蹤）' : '追蹤籃球'}
+            </button>
+          )}
+        </BallSummary>
+      )}
+    </Panel>
+  );
+}
+
+const RESULT_LABEL: Record<ShotDetection['result'], string> = { made: '進球', missed: '沒進', unknown: '無法判定' };
+const CONF_LABEL = { high: '高', medium: '中', low: '低' } as const;
+
+/** 籃球追蹤結果：看得到球的比例、換手次數、每次出手的判定與依據 */
+function BallSummary({ ball, hoop, analysis, onJump, children }: { ball: BallAnalysis | null; hoop: HoopMark | null; analysis: VideoAnalysis; onJump: (ms: number) => void; children?: ReactNode }) {
+  const runs = ball ? possessionRuns(ball.points) : [];
+  const who = (trackId: string | null) => {
+    if (!trackId) return '（無法確認）';
+    const pid = analysis.assignments[trackId];
+    if (pid && pid !== 'ignore') {
+      const [team, n] = pid.split('-');
+      return `${team === 'red' ? '紅' : '藍'}${n}`;
+    }
+    return `${trackId}（尚未指派背號）`;
+  };
+  return (
+    <div className="quality ball-summary" data-testid="ball-summary">
+      <h3>🏀 籃球追蹤</h3>
+      {!ball ? (
+        <p className="small muted">尚未追蹤籃球。</p>
+      ) : (
+        <>
+          <ul className="small">
+            <li>
+              看得到球的時間：<b data-testid="ball-coverage">{Math.round(ball.coverage * 100)}%</b>（被擋住的片段不會猜）
+            </li>
+            <li>
+              偵測到 <b>{runs.length}</b> 段持球、<b data-testid="ball-shot-count">{ball.shots.length}</b> 次出手
+            </li>
+            {!hoop && <li className="form-error">尚未標記籃框，無法判斷出手與進球。</li>}
+            {hoop?.source === 'suggested' && <li>籃框位置是系統估計的，請到「② 球場校正」確認。</li>}
+          </ul>
+          {ball.shots.length > 0 && (
+            <ul className="kf-list ball-shots" data-testid="ball-shots">
+              {ball.shots.map((s) => (
+                <li key={s.id} data-result={s.result}>
+                  <button type="button" className="link" onClick={() => onJump(s.releaseMs)}>
+                    {formatClipTime(s.releaseMs)}
+                  </button>
+                  <span className="small" style={{ flex: 1 }}>
+                    {who(s.shooterTrackId)} 出手・
+                    <b className={`shot-${s.result}`}>{RESULT_LABEL[s.result]}</b>（信心{CONF_LABEL[s.confidence]}）
+                    <br />
+                    <span className="muted">{s.evidence.slice(1).join(' ')}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="small muted">系統判斷的持球與進球要到「⑦ AI 戰術分析」匯入並由老師確認後，才會用於戰術分析與得分。</p>
+        </>
+      )}
+      {children}
+    </div>
+  );
+}
+
+/** 影片上的籃球：目前位置（實線＝看到、虛線＝推估）、最近 0.8 秒軌跡、出手結果 */
+function BallOverlay({ ball, time, W, shot, hoop }: { ball: BallAnalysis; time: number; W: number; shot: ShotDetection | undefined; hoop: HoopMark | null }) {
+  const now = ballAt(ball.points, time, 1000 / Math.max(2, ball.fps));
+  const trail = ball.points.filter((p) => p.timeMs <= time && p.timeMs >= time - 800);
+  return (
+    <g data-testid="ball-overlay" pointerEvents="none">
+      {trail.length > 1 && <polyline points={trail.map((p) => `${p.x},${p.y}`).join(' ')} fill="none" stroke="#ff9f1c" strokeOpacity={0.7} strokeWidth={W / 600} />}
+      {now && (
+        <circle
+          cx={now.x}
+          cy={now.y}
+          r={Math.max(now.r * 1.6, W / 120)}
+          fill="none"
+          stroke="#ff9f1c"
+          strokeWidth={W / 400}
+          strokeDasharray={now.source === 'interpolated' ? `${W / 250} ${W / 350}` : undefined}
+          data-testid="ball-now"
+        />
+      )}
+      {shot && hoop && time >= shot.rimMs - 100 && (
+        <text x={hoop.x} y={hoop.y - hoop.w * 1.2} textAnchor="middle" fontSize={W / 40} fontWeight={900} fill={shot.result === 'made' ? '#3ddc84' : shot.result === 'missed' ? '#ff6b7a' : '#f5b700'} stroke="#000" strokeWidth={W / 900} paintOrder="stroke" data-testid="shot-label">
+          {shot.result === 'made' ? '進球！' : shot.result === 'missed' ? '沒進' : '無法判定'}
+        </text>
+      )}
+    </g>
+  );
+}
+
+/** ② 籃框位置：判斷進球用 */
+function HoopPanel({ hoop, suggestion, picking, hasCalibration, onPick, onSet }: { hoop: HoopMark | null; suggestion: HoopMark | null; picking: boolean; hasCalibration: boolean; onPick: () => void; onSet: (h: HoopMark | null) => void }) {
+  return (
+    <Panel title="籃框位置（判斷進球用）">
+      <p className="small muted">系統要知道籃框在畫面上的位置，才能判斷球有沒有穿過籃框。請把影片停在看得清楚籃框的畫面，按下方按鈕後點一下籃框（圓框）的中心。鏡頭請固定不動。</p>
+      <div className="btn-row">
+        <button type="button" className={`btn small ${picking ? 'is-on' : 'primary'}`} onClick={onPick} data-testid="hoop-pick">
+          {picking ? '請點影片上的籃框中心…（再按一次取消）' : hoop ? '重新標記籃框' : '標記籃框'}
+        </button>
+        {suggestion && (!hoop || hoop.source === 'suggested') && (
+          <button type="button" className="btn small ghost" onClick={() => onSet({ ...suggestion })} data-testid="hoop-use-suggestion">
+            使用系統估計位置
+          </button>
+        )}
+        {hoop && (
+          <button type="button" className="btn small ghost" onClick={() => onSet(null)}>
+            清除
+          </button>
+        )}
+      </div>
+      {hoop && (
+        <>
+          <p className="small" data-testid="hoop-status">
+            {hoop.source === 'manual' ? '✓ 已標記籃框' : '目前使用系統估計的位置（黃色），建議點一下實際籃框確認'}・寬度約 {hoop.w} 像素
+          </p>
+          <label className="field">
+            <span>籃框寬度（像素，若圈圈和實際籃框大小不同可調整）</span>
+            <input type="range" min={6} max={200} value={hoop.w} onChange={(e) => onSet({ ...hoop, w: Number(e.target.value) })} data-testid="hoop-width" />
+          </label>
+        </>
+      )}
+      {!hoop && !hasCalibration && <p className="small muted">完成球場校正後，系統可以估計籃框寬度。</p>}
     </Panel>
   );
 }

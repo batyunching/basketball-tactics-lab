@@ -107,6 +107,7 @@ export function CourtView({ project, players, holderId, ballPosition, ballLift =
       role="img"
       aria-label={label ?? '戰術球場'}
       data-testid={testId}
+      data-holder={holderId ?? ''}
     >
       <g transform={transformToSvg(t)}>
         <CourtMarkings />

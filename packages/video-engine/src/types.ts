@@ -1,4 +1,5 @@
 import type { TeamId, Vec2 } from '@btl/shared-types';
+import type { BallAnalysis, HoopMark } from './ball';
 
 /** 影片中的像素座標（原始解析度） */
 export interface Px {
@@ -28,6 +29,8 @@ export interface ColorGuess {
 export interface FrameDetections {
   timeMs: number;
   boxes: (Detection & { color: ColorGuess })[];
+  /** 模型偵測到的「球」（COCO sports ball）；小球常偵測不到，另有顏色偵測 */
+  balls?: Detection[];
 }
 
 /** 不確定原因 */
@@ -129,6 +132,10 @@ export interface VideoAnalysis {
   assignments: Record<string, string>;
   reviews: Record<string, ReviewStatus>;
   keyframes: Keyframe[];
+  /** 籃框在畫面上的位置（老師標記或系統建議） */
+  hoop?: HoopMark | null;
+  /** 籃球追蹤結果 */
+  ball?: BallAnalysis | null;
   status: 'none' | 'done' | 'failed' | 'cancelled';
   modelVersion: string | null;
   analyzedAt: string | null;

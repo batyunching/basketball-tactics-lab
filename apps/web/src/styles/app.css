@@ -1934,3 +1934,14 @@ a.btn {
 .conf-insufficient { background: rgba(178, 94, 0, 0.2); }
 .ai-edit textarea { width: 100%; }
 .ai-edit .field { display: block; margin: 6px 0; }
+
+/* ---------- 籃球追蹤 ---------- */
+.ball-summary { margin-top: 10px; }
+.ball-shots li { align-items: flex-start; }
+.shot-made { color: #1f9d55; }
+.shot-missed { color: #d7263d; }
+.shot-unknown { color: #b25e00; }
+.badge.auto { margin-left: 6px; font-size: 0.78rem; padding: 1px 6px; border-radius: 6px; background: rgba(27, 110, 232, 0.12); white-space: nowrap; }
+.badge.auto.conf-high { background: rgba(43, 182, 115, 0.18); }
+.badge.auto.conf-low { background: rgba(245, 183, 0, 0.22); }
+.inline-select { font-size: 0.85rem; padding: 1px 4px; margin: 0 2px; }

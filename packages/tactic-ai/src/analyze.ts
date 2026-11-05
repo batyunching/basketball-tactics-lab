@@ -492,14 +492,15 @@ function detectShots(tl: Timeline, events: TacticalEvent[]): { events: TacticalE
     const k = indexAt(tl, s.timeMs);
     const p = tl.pos[s.shooterId]?.[k] ?? null;
     const team = teamOf(tl, s.shooterId);
-    const evidence = [`${fmtSec(s.timeMs)} ${name(tl, s.shooterId)} 出手（教師標記${s.confirmed ? '並確認' : '，尚未確認'}：${s.made ? '進球' : '未進'}）。`];
+    const by = s.source === 'ball-tracking' ? '籃球追蹤偵測' : '教師標記';
+    const evidence = [`${fmtSec(s.timeMs)} ${name(tl, s.shooterId)} 出手（${by}${s.confirmed ? '，教師已確認' : '，尚未確認'}：${s.undetermined && !s.confirmed ? '系統無法判定是否進球' : s.made ? '進球' : '未進'}）。`, ...(s.autoEvidence ?? []).map((x) => `籃球軌跡：${x}`)];
     if (p) evidence.push(`出手位置距籃框約 ${m1(dist(p, tl.basket))} 公尺（${dist(p, tl.basket) > 6.75 ? '三分線外' : inPaint(p) ? '禁區內' : '三分線內'}）。`);
     if (!s.confirmed) {
       out.push(
         finalize(
           { ...base(tl, s.made ? 'score' : 'shot', k, k, k, team), players: [{ id: s.shooterId, role: '出手者' }], evidence, inference: '', suggestion: '' },
           { confidence: 'insufficient', score: 0.2 },
-          '是否進球尚未經教師確認；系統不會自行判斷得分。',
+          '是否進球尚未經教師確認；系統（含籃球追蹤）判斷的結果要由老師確認後才算得分。',
         ),
       );
       continue;

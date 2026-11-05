@@ -1,5 +1,5 @@
-import type { FrameDetections, VideoAsset } from '@btl/video-engine';
-import { YOLOX_INPUT, classifyTeamColor, decodeYolox, letterbox, plausiblePeople, rgbaToBgrChw, torsoRegion } from '@btl/video-engine';
+import type { BallFrame, FrameDetections, VideoAsset } from '@btl/video-engine';
+import { COCO_SPORTS_BALL, YOLOX_INPUT, classifyTeamColor, colorBallCandidates, decodeYolox, letterbox, medianBackground, plausiblePeople, rgbaToBgrChw, torsoRegion } from '@btl/video-engine';
 import wasmUrl from 'onnxruntime-web/ort-wasm-simd-threaded.wasm?url';
 import mjsUrl from 'onnxruntime-web/ort-wasm-simd-threaded.mjs?url';
 
@@ -101,6 +101,7 @@ export async function detectPlayers(videoUrl: string, asset: VideoAsset, opts: A
     const out = await session.run({ [session.inputNames[0]!]: tensor });
     const raw = out[session.outputNames[0]!]!.data as Float32Array;
     const people = plausiblePeople(decodeYolox(raw, lb, { minScore: 0.15 }), W, H);
+    const balls = decodeYolox(raw, lb, { minScore: 0.08, classId: COCO_SPORTS_BALL }).filter((b) => b.w < W * 0.06 && b.h < H * 0.1);
     cctx.drawImage(video, 0, 0, color.width, color.height);
     const boxes = people.map((d) => {
       const r = torsoRegion(d);
@@ -111,7 +112,7 @@ export async function detectPlayers(videoUrl: string, asset: VideoAsset, opts: A
       const px = cctx.getImageData(x, y, w, h).data;
       return { ...d, color: classifyTeamColor(px) };
     });
-    const frame = { timeMs: t, boxes };
+    const frame: FrameDetections = { timeMs: t, boxes, ...(balls.length ? { balls } : {}) };
     frames.push(frame);
     opts.onProgress?.(i + 1, times.length, frame);
     // 讓畫面有機會更新
@@ -120,6 +121,68 @@ export async function detectPlayers(videoUrl: string, asset: VideoAsset, opts: A
   video.removeAttribute('src');
   video.load();
   return frames;
+}
+
+export interface BallDetectOptions {
+  /** 預期球半徑（原影片像素），由球員身高估計 */
+  expectedR: number;
+  onProgress?: (done: number, total: number) => void;
+  signal?: AbortSignal;
+  /** 已算好的背景（同一支影片重複使用） */
+  background?: { data: Uint8ClampedArray; width: number; height: number } | null;
+}
+
+/** 取色用畫布：最寬 1280（球很小，解析度太低會找不到） */
+function ballCanvas(W: number, H: number) {
+  const scale = Math.min(1, 1280 / W);
+  const c = document.createElement('canvas');
+  c.width = Math.round(W * scale);
+  c.height = Math.round(H * scale);
+  return { c, ctx: c.getContext('2d', { willReadFrequently: true })!, scale };
+}
+
+/** 從片段中平均取 25 張畫面，取中位數當背景（球與球員會被濾掉） */
+export async function computeBackground(videoUrl: string, asset: VideoAsset, signal?: AbortSignal) {
+  const video = await loadVideoElement(videoUrl);
+  const { c, ctx } = ballCanvas(video.videoWidth, video.videoHeight);
+  const n = 25;
+  const imgs: Uint8ClampedArray[] = [];
+  for (let i = 0; i < n; i++) {
+    if (signal?.aborted) throw new DOMException('已取消', 'AbortError');
+    const t = asset.trimStartMs + ((asset.trimEndMs - asset.trimStartMs) * (i + 0.5)) / n;
+    await seek(video, Math.min(t / 1000, Math.max(0, video.duration - 0.001)));
+    ctx.drawImage(video, 0, 0, c.width, c.height);
+    imgs.push(ctx.getImageData(0, 0, c.width, c.height).data);
+  }
+  video.removeAttribute('src');
+  video.load();
+  return { data: medianBackground(imgs), width: c.width, height: c.height };
+}
+
+/**
+ * 找每一格畫面中的籃球候選（橘色、圓形、與背景不同）。
+ * 只做顏色與形狀分析，速度快，可以用較高的取樣率。
+ */
+export async function detectBallFrames(videoUrl: string, times: number[], opts: BallDetectOptions): Promise<BallFrame[]> {
+  const video = await loadVideoElement(videoUrl);
+  const { c, ctx, scale } = ballCanvas(video.videoWidth, video.videoHeight);
+  const bg = opts.background && opts.background.width === c.width && opts.background.height === c.height ? opts.background.data : null;
+  const out: BallFrame[] = [];
+  for (let i = 0; i < times.length; i++) {
+    if (opts.signal?.aborted) throw new DOMException('已取消', 'AbortError');
+    const t = times[i]!;
+    await seek(video, Math.min(t / 1000, Math.max(0, video.duration - 0.001)));
+    ctx.drawImage(video, 0, 0, c.width, c.height);
+    const rgba = ctx.getImageData(0, 0, c.width, c.height).data;
+    out.push({ timeMs: t, candidates: colorBallCandidates(rgba, { width: c.width, height: c.height, scale: 1 / scale, expectedR: opts.expectedR, background: bg }) });
+    if (i % 5 === 4 || i === times.length - 1) {
+      opts.onProgress?.(i + 1, times.length);
+      await new Promise((r) => setTimeout(r, 0));
+    }
+  }
+  video.removeAttribute('src');
+  video.load();
+  return out;
 }
 
 /** 讀取影片基本資料（長度、解析度） */

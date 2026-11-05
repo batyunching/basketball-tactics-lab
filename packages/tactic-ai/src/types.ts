@@ -7,7 +7,13 @@ export interface PossessionMark {
   holderId: string | null;
   /** 教師是否已確認 */
   confirmed: boolean;
+  /** 標記來源：教師手動，或由籃球追蹤自動偵測（仍需教師確認） */
+  source?: MarkSource;
+  /** 自動偵測的信心 */
+  autoConfidence?: 'high' | 'medium' | 'low';
 }
+
+export type MarkSource = 'teacher' | 'ball-tracking';
 
 /** 教師標記的出手（只有教師確認的進球才算得分，系統不臆測） */
 export interface ShotMark {
@@ -16,6 +22,12 @@ export interface ShotMark {
   shooterId: string;
   made: boolean;
   confirmed: boolean;
+  source?: MarkSource;
+  autoConfidence?: 'high' | 'medium' | 'low';
+  /** 系統無法判斷是否進球，需要老師決定 */
+  undetermined?: boolean;
+  /** 系統判斷的依據（籃球軌跡） */
+  autoEvidence?: string[];
 }
 
 export type TacticalEventType = 'pass' | 'cut' | 'screen' | 'drive' | 'help' | 'turnover' | 'score' | 'shot';
