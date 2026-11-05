@@ -6,7 +6,7 @@ import type { Route } from '../../app/router';
 import { ChallengeRunner } from '../challenges/ChallengeRunner';
 import { friendlyError, getSupabase } from '../cloud/client';
 import { LessonViewer } from '../lessons/LessonViewer';
-import { assignmentChallenges, assignmentFromLocalLink, fetchAssignmentByCode, listMyCloudAttempts, newId, submitCloudAttempt } from '../assignments/api';
+import { assignmentChallenges, assignmentFromLink, fetchAssignmentByCode, listMyCloudAttempts, newId, submitCloudAttempt } from '../assignments/api';
 import { repository } from '../storage/db';
 import { downloadBlob } from '../storage/persistence';
 
@@ -95,8 +95,13 @@ export function StudentPage({ route }: { route: Route }) {
           if (!alive) return;
           setLoad(a ? { state: 'ok', a, cloud: true } : { state: 'error', message: `找不到任務代碼「${key}」，請確認連結是否正確。` });
         } else {
-          const a = assignmentFromLocalLink(key, route.query);
-          setLoad(a ? { state: 'ok', a, cloud: false } : { state: 'error', message: '連結中的教材不存在，請跟老師確認連結。' });
+          const a = await assignmentFromLink(key, route.query);
+          if (!alive) return;
+          setLoad(
+            a
+              ? { state: 'ok', a, cloud: false }
+              : { state: 'error', message: key === 'custom' ? '教材資料無法驗證（連結可能不完整或被修改），請跟老師重新索取連結。' : '連結中的教材不存在，請跟老師確認連結。' },
+          );
         }
       } catch (err) {
         if (alive) setLoad({ state: 'error', message: friendlyError(err) });

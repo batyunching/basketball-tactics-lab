@@ -240,3 +240,61 @@ describe('教師戰術同步（projects）', () => {
     });
   });
 });
+
+/** 刪除被拒：沒有 DELETE 權限（permission denied）或 RLS 過濾後 0 筆 */
+async function expectNoDelete(sql: string, params: unknown[] = []) {
+  const r = await q(sql, params).catch((e: Error) => e);
+  if (r instanceof Error) expect(r.message).toMatch(/permission denied|row-level security/);
+  else expect(r.rows).toHaveLength(0);
+}
+
+describe('刪除權限（Phase 4 補測）', () => {
+  let delId = '';
+  beforeAll(async () => {
+    delId = await as(teacherA, async () => (await q(`insert into assignments (code, title, lesson_id, payload) values ('DEL001', '待刪除', 'custom', '{}') returning id`)).rows[0]!.id as string);
+    await as(student1, async () => q(attemptSql, [delId]));
+    await as(student2, async () => q(attemptSql, [delId]));
+  });
+
+  it('學生不能刪除自己或別人的作答紀錄', async () => {
+    await as(student1, async () => {
+      await expectNoDelete(`delete from attempts where assignment_id = $1 returning id`, [delId]);
+    });
+    const n = await q(`select count(*)::int as n from attempts where assignment_id = $1`, [delId]);
+    expect(n.rows[0]!.n).toBe(2);
+  });
+
+  it('教師 B 不能刪除教師 A 的作答紀錄，教師 A 也不能單獨刪除學生作答（只能刪整個任務）', async () => {
+    await as(teacherB, async () => {
+      await expectNoDelete(`delete from attempts where assignment_id = $1 returning id`, [delId]);
+    });
+    await as(teacherA, async () => {
+      await expectNoDelete(`delete from attempts where assignment_id = $1 returning id`, [delId]);
+    });
+  });
+
+  it('匿名者、學生、其他教師都不能刪除戰術；擁有者也只能用軟刪除（deleted=true）', async () => {
+    await as(teacherA, async () => q(`insert into projects (id, title, data) values ('pdel', '待刪', '{}')`));
+    for (const who of [student1, teacherB, teacherA] as Who[]) {
+      await as(who, async () => {
+        await expectNoDelete(`delete from projects where id = 'pdel' returning id`);
+      });
+    }
+    await as('anon', async () => expectDenied(q(`delete from projects where id = 'pdel'`)));
+    await as(teacherA, async () => {
+      const r = await q(`update projects set deleted = true, revision = 2 where id = 'pdel' returning deleted`);
+      expect(r.rows[0]!.deleted).toBe(true);
+    });
+  });
+
+  it('教師 A 刪除自己的任務 → 所有學生作答一併刪除（cascade）', async () => {
+    await as(teacherA, async () => {
+      expect((await q(`delete from assignments where id = $1 returning id`, [delId])).rows).toHaveLength(1);
+    });
+    const left = await q(`select count(*)::int as n from attempts where assignment_id = $1`, [delId]);
+    expect(left.rows[0]!.n).toBe(0);
+    await as(student1, async () => {
+      expect((await q(`select * from get_assignment('DEL001')`)).rows).toHaveLength(0);
+    });
+  });
+});

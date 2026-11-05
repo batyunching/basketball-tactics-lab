@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Assignment, Attempt, ChallengeResult, Lesson, StudentIdentity } from '@btl/shared-types';
 import { lessonSchema } from '@btl/data-schemas';
 import { getLesson } from '@btl/lesson-library';
+import { decodeLesson, encodeLesson } from './lessonLink';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 去掉易混淆的 0/O、1/I
 
@@ -57,6 +58,28 @@ export function localLink(a: Assignment): string {
   const q = new URLSearchParams({ k: a.code, t: a.title, c: a.challengeIds.join(',') });
   if (a.message) q.set('m', a.message);
   return `${appBaseUrl()}#/p/${encodeURIComponent(a.lessonId)}?${q.toString()}`;
+}
+
+/** 任何任務的分享連結：雲端用代碼；內建教材用短連結；自訂教材把壓縮後的教材放進連結 */
+export async function shareLink(a: Assignment, cloud: boolean): Promise<string> {
+  if (cloud) return cloudLink(a.code);
+  if (getLesson(a.lessonId)) return localLink(a);
+  const q = new URLSearchParams({ k: a.code, t: a.title, c: a.challengeIds.join(',') });
+  if (a.message) q.set('m', a.message);
+  q.set('d', await encodeLesson(a.lesson));
+  return `${appBaseUrl()}#/p/custom?${q.toString()}`;
+}
+
+/** 解析本機連結（含自訂教材）；資料不正確回傳 null */
+export async function assignmentFromLink(lessonId: string, query: URLSearchParams): Promise<Assignment | null> {
+  if (lessonId !== 'custom') return assignmentFromLocalLink(lessonId, query);
+  const d = query.get('d');
+  const lesson = d ? await decodeLesson(d) : null;
+  if (!lesson) return null;
+  const code = (query.get('k') ?? '').toUpperCase();
+  const ids = (query.get('c') ?? '').split(',').filter(Boolean);
+  const a = buildAssignment(lesson, { title: query.get('t') ?? lesson.title, message: query.get('m') ?? '', challengeIds: ids.length ? ids : lesson.challenges.map((c) => c.id) }, /^[A-Z0-9]{4,12}$/.test(code) ? code : 'LOCAL0');
+  return { ...a, id: `local-${a.code}` };
 }
 
 export function assignmentFromLocalLink(lessonId: string, query: URLSearchParams): Assignment | null {

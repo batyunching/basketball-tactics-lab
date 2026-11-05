@@ -1,4 +1,4 @@
-# 籃球戰術教學平台（Basketball Tactics Lab）— Phase 1～3
+# 籃球戰術教學平台（Basketball Tactics Lab）— Phase 1～4
 
 國中體育課用的籃球戰術教學平台。
 
@@ -7,7 +7,9 @@
 
 - **Phase 3 影片重建**：匯入 3v3 半場短片、片段選擇、球場校正、瀏覽器端 YOLOX 偵測＋多目標追蹤＋隊色判斷、老師指派身分、不確定標記、人工關鍵影格、原影片與虛擬球場同步回放、轉成戰術動畫。
 
-網址：https://batyunching.github.io/basketball-tactics-lab/ ・ 尚**不含** AI 戰術解說（Phase 4）。
+- **Phase 4 AI 戰術分析**：教師確認球權與出手 → 規則式分析傳球、空切、掩護、突破、協防、失誤、得分關鍵（繁中：時間點、相關球員、可見證據、戰術推論、教學建議、信心；證據不足明確說無法確認）→ 教師確認／否決／修改／補漏 → 一鍵轉成學生互動教材（可用本機連結或雲端任務發布）。不需 API 金鑰，資料不離開電腦。
+
+網址：https://batyunching.github.io/basketball-tactics-lab/
 
 ## 快速開始
 
@@ -43,6 +45,7 @@ apps/web/                     React + TypeScript + Vite 前端
   src/features/cloud/         Supabase 連線、登入、同步控制
   src/features/sync/          同步引擎（離線佇列、衝突處理）
   src/features/video/         Phase 3 影片管理、校正、追蹤、關鍵影格、同步回放
+packages/tactic-ai/           Phase 4 規則式戰術分析、品質評估、事件轉教材
 packages/video-engine/        單應性校正、YOLOX 解碼、追蹤、隊色、軌跡與不確定標記
 packages/lesson-library/      六套教材與題目資料
 supabase/migrations/          資料表與 RLS（在 Supabase SQL Editor 執行）
@@ -65,3 +68,5 @@ docs/                         需求、架構、資料模型、驗收測試、�
 - [部署（GitHub Pages）](docs/deployment.md)
 - [雲端設定（Supabase）](docs/supabase-setup.md)
 - [影片重建（Phase 3）](docs/video-analysis.md)
+- [AI 戰術分析品質評估（Phase 4）](docs/quality-evaluation.md)
+- [5v5 擴充規劃](docs/5v5-plan.md)

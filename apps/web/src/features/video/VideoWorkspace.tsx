@@ -37,8 +37,9 @@ import { TEAM_FILL, TEAM_LABEL } from '../players/PlayerToken';
 import { repository } from '../storage/db';
 import { downloadBlob, openAsNewProject } from '../storage/persistence';
 import { MODEL_VERSION, detectPlayers } from './detector';
+import { AiPanel } from './AiPanel';
 
-const STEPS = ['① 片段', '② 球場校正', '③ 自動追蹤', '④ 身分校正', '⑤ 人工關鍵影格', '⑥ 對照回放'] as const;
+const STEPS = ['① 片段', '② 球場校正', '③ 自動追蹤', '④ 身分校正', '⑤ 人工關鍵影格', '⑥ 對照回放', '⑦ AI 戰術分析'] as const;
 const sec = (ms: number) => (ms / 1000).toFixed(1);
 const fmtDuration = (s: number) => (s < 60 ? `${s} 秒` : `${Math.round(s / 60)} 分鐘`);
 
@@ -384,7 +385,7 @@ export function VideoWorkspace({ id }: { id: string }) {
                 onMove={(pid, pos) => upsertKeyframe((k) => ({ ...k, players: { ...k.players, [pid]: { x: Math.round(pos.x * 100) / 100, y: Math.round(pos.y * 100) / 100 } } }))}
                 uncertain={step === 4 ? [] : uncertainNow}
                 trails={
-                  step === 5
+                  step >= 5
                     ? players
                         .map((p) => ({
                           id: p.id,
@@ -448,6 +449,7 @@ export function VideoWorkspace({ id }: { id: string }) {
               nowSamples={nowSamples}
             />
           )}
+          {step === 6 && <AiPanel asset={asset} analysis={analysis} samples={samples} players={players} time={time} onJump={seekTo} />}
         </div>
       </div>
     </div>

@@ -1,0 +1,137 @@
+[
+  {
+    "scenario": "傳切 3v3",
+    "sigma": 0,
+    "drop": 0,
+    "precision": 1,
+    "recall": 1,
+    "f1": 1,
+    "insufficientRate": 0
+  },
+  {
+    "scenario": "傳切 3v3",
+    "sigma": 0.15,
+    "drop": 0,
+    "precision": 1,
+    "recall": 1,
+    "f1": 1,
+    "insufficientRate": 0
+  },
+  {
+    "scenario": "傳切 3v3",
+    "sigma": 0.3,
+    "drop": 0.1,
+    "precision": 1,
+    "recall": 1,
+    "f1": 1,
+    "insufficientRate": 0
+  },
+  {
+    "scenario": "傳切 3v3",
+    "sigma": 0.5,
+    "drop": 0.2,
+    "precision": 1,
+    "recall": 1,
+    "f1": 1,
+    "insufficientRate": 0
+  },
+  {
+    "scenario": "傳切 3v3",
+    "sigma": 0.8,
+    "drop": 0.3,
+    "precision": 1,
+    "recall": 1,
+    "f1": 1,
+    "insufficientRate": 0
+  },
+  {
+    "scenario": "擋拆＋協防 3v3",
+    "sigma": 0,
+    "drop": 0,
+    "precision": 0.857,
+    "recall": 1,
+    "f1": 0.923,
+    "insufficientRate": 0
+  },
+  {
+    "scenario": "擋拆＋協防 3v3",
+    "sigma": 0.15,
+    "drop": 0,
+    "precision": 0.857,
+    "recall": 1,
+    "f1": 0.923,
+    "insufficientRate": 0
+  },
+  {
+    "scenario": "擋拆＋協防 3v3",
+    "sigma": 0.3,
+    "drop": 0.1,
+    "precision": 0.848,
+    "recall": 0.933,
+    "f1": 0.889,
+    "insufficientRate": 0
+  },
+  {
+    "scenario": "擋拆＋協防 3v3",
+    "sigma": 0.5,
+    "drop": 0.2,
+    "precision": 0.837,
+    "recall": 0.858,
+    "f1": 0.848,
+    "insufficientRate": 0
+  },
+  {
+    "scenario": "擋拆＋協防 3v3",
+    "sigma": 0.8,
+    "drop": 0.3,
+    "precision": 0.831,
+    "recall": 0.817,
+    "f1": 0.824,
+    "insufficientRate": 0
+  },
+  {
+    "scenario": "突破分球 5v5",
+    "sigma": 0,
+    "drop": 0,
+    "precision": 1,
+    "recall": 1,
+    "f1": 1,
+    "insufficientRate": 0
+  },
+  {
+    "scenario": "突破分球 5v5",
+    "sigma": 0.15,
+    "drop": 0,
+    "precision": 1,
+    "recall": 1,
+    "f1": 1,
+    "insufficientRate": 0
+  },
+  {
+    "scenario": "突破分球 5v5",
+    "sigma": 0.3,
+    "drop": 0.1,
+    "precision": 1,
+    "recall": 1,
+    "f1": 1,
+    "insufficientRate": 0
+  },
+  {
+    "scenario": "突破分球 5v5",
+    "sigma": 0.5,
+    "drop": 0.2,
+    "precision": 1,
+    "recall": 1,
+    "f1": 1,
+    "insufficientRate": 0
+  },
+  {
+    "scenario": "突破分球 5v5",
+    "sigma": 0.8,
+    "drop": 0.3,
+    "precision": 1,
+    "recall": 0.983,
+    "f1": 0.992,
+    "insufficientRate": 0
+  }
+]

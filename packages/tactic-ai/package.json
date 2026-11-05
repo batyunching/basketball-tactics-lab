@@ -1,0 +1,16 @@
+{
+  "name": "@btl/tactic-ai",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "@btl/shared-types": "0.1.0",
+    "@btl/tactic-engine": "0.1.0",
+    "@btl/video-engine": "0.1.0"
+  },
+  "devDependencies": {
+    "@btl/data-schemas": "0.1.0"
+  }
+}

@@ -1,5 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import type { Assignment, Attempt, Formation, TacticProject } from '@btl/shared-types';
+import type { Assignment, Attempt, Formation, Lesson, TacticProject } from '@btl/shared-types';
+import type { AiState } from '@btl/tactic-ai';
 import type { VideoAnalysis, VideoAsset } from '@btl/video-engine';
 
 /**
@@ -98,10 +99,14 @@ interface BtlDB extends DBSchema {
   videos: { key: string; value: VideoAsset };
   videoBlobs: { key: string; value: Blob };
   analyses: { key: string; value: VideoAnalysis };
+  /** Phase 4：AI 戰術分析（球權、出手標記與事件審核），依影片 id 儲存 */
+  aiStates: { key: string; value: AiState & { videoId: string; updatedAt: string } };
+  /** 由影片轉換的自訂教材 */
+  customLessons: { key: string; value: Lesson & { createdAt: string; sourceVideoId?: string } };
 }
 
 export const DB_NAME = 'basketball-tactics-lab';
-export const DB_VERSION = 3;
+export const DB_VERSION = 4;
 
 export class IndexedDbRepository implements TacticRepository, LocalSyncStore {
   private dbp: Promise<IDBPDatabase<BtlDB>> | null = null;
@@ -130,6 +135,10 @@ export class IndexedDbRepository implements TacticRepository, LocalSyncStore {
             db.createObjectStore('videos', { keyPath: 'id' });
             db.createObjectStore('videoBlobs');
             db.createObjectStore('analyses', { keyPath: 'videoId' });
+          }
+          if (oldVersion < 4) {
+            db.createObjectStore('aiStates', { keyPath: 'videoId' });
+            db.createObjectStore('customLessons', { keyPath: 'id' });
           }
         },
       });
@@ -295,14 +304,45 @@ export class IndexedDbRepository implements TacticRepository, LocalSyncStore {
     await tx.done;
   }
 
-  /** 刪除影片、影片檔、追蹤軌跡與分析結果 */
+  /** 刪除影片、影片檔、追蹤軌跡、分析結果與 AI 戰術分析（已轉成的教材不受影響） */
   async deleteVideo(id: string): Promise<void> {
     const db = await this.db();
-    const tx = db.transaction(['videos', 'videoBlobs', 'analyses'], 'readwrite');
+    const tx = db.transaction(['videos', 'videoBlobs', 'analyses', 'aiStates'], 'readwrite');
     await tx.objectStore('videos').delete(id);
     await tx.objectStore('videoBlobs').delete(id);
     await tx.objectStore('analyses').delete(id);
+    await tx.objectStore('aiStates').delete(id);
     await tx.done;
+  }
+
+  // ─────────── AI 戰術分析與自訂教材（Phase 4） ───────────
+  async getAiState(videoId: string): Promise<(AiState & { videoId: string; updatedAt: string }) | undefined> {
+    return (await this.db()).get('aiStates', videoId);
+  }
+
+  async saveAiState(videoId: string, s: AiState): Promise<void> {
+    await (await this.db()).put('aiStates', { ...s, videoId, updatedAt: new Date().toISOString() });
+  }
+
+  async deleteAiState(videoId: string): Promise<void> {
+    await (await this.db()).delete('aiStates', videoId);
+  }
+
+  async listCustomLessons(): Promise<(Lesson & { createdAt: string; sourceVideoId?: string })[]> {
+    const list = await (await this.db()).getAll('customLessons');
+    return list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async getCustomLesson(id: string): Promise<(Lesson & { createdAt: string; sourceVideoId?: string }) | undefined> {
+    return (await this.db()).get('customLessons', id);
+  }
+
+  async saveCustomLesson(l: Lesson, sourceVideoId?: string): Promise<void> {
+    await (await this.db()).put('customLessons', { ...l, createdAt: new Date().toISOString(), ...(sourceVideoId ? { sourceVideoId } : {}) });
+  }
+
+  async deleteCustomLesson(id: string): Promise<void> {
+    await (await this.db()).delete('customLessons', id);
   }
 
   async getAnalysis(videoId: string): Promise<VideoAnalysis | undefined> {

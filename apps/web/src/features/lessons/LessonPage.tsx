@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { ChallengeResult } from '@btl/shared-types';
-import { CATEGORY_LABEL, getLesson } from '@btl/lesson-library';
+import { CATEGORY_LABEL } from '@btl/lesson-library';
+import { useAnyLesson } from './useLessons';
 import { CHALLENGE_TYPE_LABEL, totalScore } from '@btl/tactic-engine';
 import { navigate } from '../../app/router';
 import { useStore } from '../../app/store';
@@ -10,9 +11,10 @@ import { LessonViewer } from './LessonViewer';
 
 /** 單一教材：動畫講解 + 三種互動題（教師試做或自學） */
 export function LessonPage({ id }: { id: string }) {
-  const lesson = getLesson(id);
+  const lesson = useAnyLesson(id);
   const [tab, setTab] = useState<'learn' | number>('learn');
   const [results, setResults] = useState<Record<string, ChallengeResult>>({});
+  if (lesson === undefined) return <div className="page muted">讀取教材中…</div>;
   if (!lesson) {
     return (
       <div className="page">

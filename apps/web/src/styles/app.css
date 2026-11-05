@@ -1890,3 +1890,38 @@ a.btn {
     top: 0;
   }
 }
+
+/* ---------- Phase 4：AI 戰術分析 ---------- */
+.mark-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0; }
+.mark-row select { min-width: 110px; }
+.panel-section.notes { border-left: 4px solid #f5b700; background: rgba(245, 183, 0, 0.08); }
+.panel-section.notes p { margin: 2px 0; }
+.scoring-key { border-left: 4px solid #2bb673; background: rgba(43, 182, 115, 0.08); }
+.ai-events { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 10px; }
+.ai-event { border: 1px solid rgba(128, 128, 128, 0.35); border-radius: 10px; padding: 10px 12px; }
+.ai-event header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 0.9rem; }
+.ai-event .st { margin-left: auto; font-weight: 700; }
+.ai-event.st-confirmed { border-color: #2bb673; box-shadow: inset 4px 0 0 #2bb673; }
+.ai-event.st-rejected { opacity: 0.55; }
+.ai-event .players { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+.ai-event .players .chip { color: #fff; }
+.ai-event .ai-sec { margin: 6px 0; }
+.ai-event .ai-sec b { font-size: 0.82rem; opacity: 0.75; }
+.ai-event .ai-sec p, .ai-event .ai-sec ul { margin: 2px 0 0; }
+.ai-event .ai-sec ul { padding-left: 1.2em; font-size: 0.9rem; }
+.ai-event .insufficient { color: #b25e00; font-weight: 600; font-size: 0.9rem; }
+.type-badge { padding: 2px 8px; border-radius: 999px; font-weight: 800; color: #fff; background: #555; }
+.type-badge.ev-pass { background: #1b6ee8; }
+.type-badge.ev-cut { background: #7a3cd6; }
+.type-badge.ev-screen { background: #c25b00; }
+.type-badge.ev-drive { background: #d7263d; }
+.type-badge.ev-help { background: #0f8a6b; }
+.type-badge.ev-shot, .type-badge.ev-score { background: #2bb673; }
+.type-badge.ev-turnover { background: #6b6f78; }
+.conf { font-size: 0.82rem; padding: 1px 6px; border-radius: 6px; }
+.conf-high { background: rgba(43, 182, 115, 0.18); }
+.conf-medium { background: rgba(27, 110, 232, 0.15); }
+.conf-low { background: rgba(245, 183, 0, 0.2); }
+.conf-insufficient { background: rgba(178, 94, 0, 0.2); }
+.ai-edit textarea { width: 100%; }
+.ai-edit .field { display: block; margin: 6px 0; }

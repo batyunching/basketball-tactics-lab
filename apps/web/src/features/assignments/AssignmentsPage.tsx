@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import type { Assignment, Attempt } from '@btl/shared-types';
 import { parseResultFile } from '@btl/data-schemas';
-import { LESSONS, getLesson } from '@btl/lesson-library';
+import { getLesson } from '@btl/lesson-library';
+import { useAllLessons } from '../lessons/useLessons';
 import { CHALLENGE_TYPE_LABEL } from '@btl/tactic-engine';
 import type { Route } from '../../app/router';
 import { useStore } from '../../app/store';
@@ -21,13 +22,22 @@ import {
   listCloudAttempts,
   localLink,
   saveCloudFeedback,
+  shareLink,
   setCloudAssignmentOpen,
 } from './api';
 
 type Item = { a: Assignment; cloud: boolean };
 
-function linkOf(it: Item): string {
-  return it.cloud ? cloudLink(it.a.code) : localLink(it.a);
+function useShareLink(it: Item): string {
+  const [link, setLink] = useState(() => (it.cloud ? cloudLink(it.a.code) : getLesson(it.a.lessonId) ? localLink(it.a) : ''));
+  useEffect(() => {
+    let alive = true;
+    void shareLink(it.a, it.cloud).then((l) => alive && setLink(l));
+    return () => {
+      alive = false;
+    };
+  }, [it]);
+  return link;
 }
 
 function QrCode({ text }: { text: string }) {
@@ -41,11 +51,11 @@ function QrCode({ text }: { text: string }) {
 }
 
 function ShareBox({ it }: { it: Item }) {
-  const link = linkOf(it);
+  const link = useShareLink(it);
   const [copied, setCopied] = useState(false);
   return (
     <div className="share-box" data-testid="share-box">
-      <QrCode text={link} />
+      {link ? <QrCode text={link} /> : <p className="muted small">產生連結中…</p>}
       <div className="share-info">
         <p className="muted small">學生用手機掃描 QR Code，或開啟下方連結；也可以口頭告訴學生任務代碼。</p>
         <p className="code-big" data-testid="share-code">
@@ -79,13 +89,15 @@ function ShareBox({ it }: { it: Item }) {
 }
 
 function CreateForm({ initialLesson, canCloud, onCreated }: { initialLesson: string; canCloud: boolean; onCreated: (it: Item) => void }) {
-  const [lessonId, setLessonId] = useState(getLesson(initialLesson) ? initialLesson : LESSONS[0]!.id);
-  const lesson = getLesson(lessonId)!;
+  const { builtIn, custom } = useAllLessons();
+  const all = [...builtIn, ...custom];
+  const [lessonId, setLessonId] = useState(initialLesson || builtIn[0]!.id);
+  const lesson = all.find((l) => l.id === lessonId) ?? builtIn[0]!;
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
   const [picked, setPicked] = useState<string[]>(lesson.challenges.map((c) => c.id));
   const [busy, setBusy] = useState(false);
-  useEffect(() => setPicked(getLesson(lessonId)!.challenges.map((c) => c.id)), [lessonId]);
+  useEffect(() => setPicked(lesson.challenges.map((c) => c.id)), [lesson]);
 
   const publish = async () => {
     setBusy(true);
@@ -114,11 +126,22 @@ function CreateForm({ initialLesson, canCloud, onCreated }: { initialLesson: str
       <label className="field">
         <span>教材</span>
         <select value={lessonId} onChange={(e) => setLessonId(e.target.value)} data-testid="asg-lesson">
-          {LESSONS.map((l, i) => (
-            <option key={l.id} value={l.id}>
-              {i + 1}. {l.title}（{l.en}）
-            </option>
-          ))}
+          <optgroup label="內建教材">
+            {builtIn.map((l, i) => (
+              <option key={l.id} value={l.id}>
+                {i + 1}. {l.title}（{l.en}）
+              </option>
+            ))}
+          </optgroup>
+          {custom.length > 0 && (
+            <optgroup label="我的教材（由影片轉換）">
+              {custom.map((l) => (
+                <option key={l.id} value={l.id}>
+                  🎥 {l.title}
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
       </label>
       <label className="field">
