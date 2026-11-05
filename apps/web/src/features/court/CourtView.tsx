@@ -40,12 +40,16 @@ interface Props {
   playerMarks?: Record<string, boolean>;
   label?: string;
   testId?: string;
+  /** 位置不確定的球員（橘色虛線圈＋問號） */
+  uncertain?: string[];
+  /** 軌跡尾巴（球場座標） */
+  trails?: { id: string; points: Vec2[]; color: string }[];
 }
 
 const BALL_VIEW_OFFSET: Vec2 = { x: 0.5, y: 0.45 };
 
 /** 唯讀／作答用球場：學生端與教材播放共用，不會改動任何教師資料 */
-export function CourtView({ project, players, holderId, ballPosition, ballLift = 0, annotations = [], draggable = [], onMove, zones = [], ghosts = [], playerMarks = {}, label, testId }: Props) {
+export function CourtView({ project, players, holderId, ballPosition, ballLift = 0, annotations = [], draggable = [], onMove, zones = [], ghosts = [], playerMarks = {}, label, testId, uncertain = [], trails = [] }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [drag, setDrag] = useState<{ id: string; pointerId: number; offset: Vec2 } | null>(null);
   const { mode, attackDirection } = project.court;
@@ -123,6 +127,21 @@ export function CourtView({ project, players, holderId, ballPosition, ballLift =
         {annotations.map((a) => (
           <AnnotationShape key={a.id} a={a} />
         ))}
+        {trails.map((tr) =>
+          tr.points.length > 1 ? (
+            <polyline
+              key={`trail-${tr.id}`}
+              points={tr.points.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ')}
+              fill="none"
+              stroke={tr.color}
+              strokeOpacity={0.6}
+              strokeWidth={0.14}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              data-trail={tr.id}
+            />
+          ) : null,
+        )}
       </g>
       {ghosts.map((g) => {
         const v = courtToView(g.pos, t);
@@ -146,6 +165,15 @@ export function CourtView({ project, players, holderId, ballPosition, ballLift =
             <g key={def.id} data-draggable={canDrag ? 'true' : undefined}>
               {canDrag && <circle cx={v.x} cy={v.y} r={0.95} fill="none" stroke="#f5b700" strokeWidth={0.12} strokeDasharray="0.25 0.15" className="pulse" />}
               {mark !== undefined && <circle cx={v.x} cy={v.y} r={0.9} fill="none" stroke={mark ? '#2bb673' : '#d7263d'} strokeWidth={0.16} />}
+              {uncertain.includes(def.id) && (
+                <g data-uncertain={def.id}>
+                  <circle cx={v.x} cy={v.y} r={0.92} fill="none" stroke="#ff9f1c" strokeWidth={0.14} strokeDasharray="0.22 0.16" />
+                  <circle cx={v.x + 0.62} cy={v.y - 0.62} r={0.3} fill="#ff9f1c" />
+                  <text x={v.x + 0.62} y={v.y - 0.6} textAnchor="middle" dominantBaseline="central" fontSize={0.42} fontWeight={900} fill="#1d1d1f">
+                    ?
+                  </text>
+                </g>
+              )}
               <PlayerToken
                 id={def.id}
                 team={def.teamId}

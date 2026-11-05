@@ -17,6 +17,8 @@ import { startCloud } from '../features/cloud/controller';
 import { LessonLibraryPage } from '../features/lessons/LessonLibraryPage';
 import { LessonPage } from '../features/lessons/LessonPage';
 import { StudentPage } from '../features/student/StudentPage';
+import { VideoLibraryPage } from '../features/video/VideoLibraryPage';
+import { VideoWorkspace } from '../features/video/VideoWorkspace';
 
 function isTyping(e: KeyboardEvent): boolean {
   const el = e.target as HTMLElement | null;
@@ -159,6 +161,7 @@ const NAV = [
   { to: '/', label: '🏀 戰術白板', match: (r: Route) => r.segments.length === 0 },
   { to: '/lessons', label: '📚 教材庫', match: (r: Route) => r.segments[0] === 'lessons' },
   { to: '/teach', label: '👩‍🏫 學生任務', match: (r: Route) => r.segments[0] === 'teach' },
+  { to: '/video', label: '🎥 影片分析', match: (r: Route) => r.segments[0] === 'video' },
 ];
 
 function NavBar({ route }: { route: Route }) {
@@ -194,6 +197,7 @@ function TeacherShell({ route }: { route: Route }) {
   let page: ReactNode;
   if (first === 'lessons') page = second ? <LessonPage id={second} /> : <LessonLibraryPage />;
   else if (first === 'teach') page = <AssignmentsPage route={route} />;
+  else if (first === 'video') page = second ? <VideoWorkspace key={second} id={second} /> : <VideoLibraryPage />;
   else page = <WhiteboardPage />;
   return (
     <div className={`shell ${first ? 'shell-page' : 'shell-board'}`}>

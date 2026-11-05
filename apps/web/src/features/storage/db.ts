@@ -1,5 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import type { Assignment, Attempt, Formation, TacticProject } from '@btl/shared-types';
+import type { VideoAnalysis, VideoAsset } from '@btl/video-engine';
 
 /**
  * 可替換的儲存介面：本機為 IndexedDB 實作；雲端同步由 SyncEngine 透過
@@ -93,10 +94,14 @@ interface BtlDB extends DBSchema {
   conflicts: { key: string; value: SyncConflict };
   attempts: { key: string; value: Attempt; indexes: { assignmentCode: string } };
   assignments: { key: string; value: Assignment };
+  /** Phase 3：影片只存在這台電腦（學生影片預設私人） */
+  videos: { key: string; value: VideoAsset };
+  videoBlobs: { key: string; value: Blob };
+  analyses: { key: string; value: VideoAnalysis };
 }
 
 export const DB_NAME = 'basketball-tactics-lab';
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 
 export class IndexedDbRepository implements TacticRepository, LocalSyncStore {
   private dbp: Promise<IDBPDatabase<BtlDB>> | null = null;
@@ -120,6 +125,11 @@ export class IndexedDbRepository implements TacticRepository, LocalSyncStore {
             const attempts = db.createObjectStore('attempts', { keyPath: 'id' });
             attempts.createIndex('assignmentCode', 'assignmentCode');
             db.createObjectStore('assignments', { keyPath: 'id' });
+          }
+          if (oldVersion < 3) {
+            db.createObjectStore('videos', { keyPath: 'id' });
+            db.createObjectStore('videoBlobs');
+            db.createObjectStore('analyses', { keyPath: 'videoId' });
           }
         },
       });
@@ -261,6 +271,50 @@ export class IndexedDbRepository implements TacticRepository, LocalSyncStore {
 
   async deleteLocalAssignment(id: string): Promise<void> {
     await (await this.db()).delete('assignments', id);
+  }
+
+  // ─────────── 影片（Phase 3） ───────────
+  async listVideos(): Promise<VideoAsset[]> {
+    const list = await (await this.db()).getAll('videos');
+    return list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async getVideo(id: string): Promise<VideoAsset | undefined> {
+    return (await this.db()).get('videos', id);
+  }
+
+  async getVideoBlob(id: string): Promise<Blob | undefined> {
+    return (await this.db()).get('videoBlobs', id);
+  }
+
+  async saveVideo(meta: VideoAsset, blob?: Blob): Promise<void> {
+    const db = await this.db();
+    const tx = db.transaction(['videos', 'videoBlobs'], 'readwrite');
+    await tx.objectStore('videos').put(meta);
+    if (blob) await tx.objectStore('videoBlobs').put(blob, meta.id);
+    await tx.done;
+  }
+
+  /** 刪除影片、影片檔、追蹤軌跡與分析結果 */
+  async deleteVideo(id: string): Promise<void> {
+    const db = await this.db();
+    const tx = db.transaction(['videos', 'videoBlobs', 'analyses'], 'readwrite');
+    await tx.objectStore('videos').delete(id);
+    await tx.objectStore('videoBlobs').delete(id);
+    await tx.objectStore('analyses').delete(id);
+    await tx.done;
+  }
+
+  async getAnalysis(videoId: string): Promise<VideoAnalysis | undefined> {
+    return (await this.db()).get('analyses', videoId);
+  }
+
+  async saveAnalysis(a: VideoAnalysis): Promise<void> {
+    await (await this.db()).put('analyses', { ...a, updatedAt: new Date().toISOString() });
+  }
+
+  async deleteAnalysis(videoId: string): Promise<void> {
+    await (await this.db()).delete('analyses', videoId);
   }
 }
 

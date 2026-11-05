@@ -1,11 +1,13 @@
-# 籃球戰術教學平台（Basketball Tactics Lab）— Phase 1＋2
+# 籃球戰術教學平台（Basketball Tactics Lab）— Phase 1～3
 
 國中體育課用的籃球戰術教學平台。
 
 - **Phase 1 戰術白板**：半場／全場、1v1～5v5、紅藍編號球員拖曳、籃球與球權、戰術畫筆、預設隊形、多步驟動畫、復原重做、本機自動儲存、JSON 匯入匯出。
 - **Phase 2 教學平台**：六套戰術教材（M07）、三類互動題（M08：站位挑戰、跑位預測、戰術選擇）、教師發布任務連結／QR Code、學生唯讀作答與查看回饋、Supabase 雲端同步（離線佇列、修訂版衝突處理）、RLS 資料權限。
 
-網址：https://batyunching.github.io/basketball-tactics-lab/ ・ 尚**不含** AI 影片分析（Phase 3、4）。
+- **Phase 3 影片重建**：匯入 3v3 半場短片、片段選擇、球場校正、瀏覽器端 YOLOX 偵測＋多目標追蹤＋隊色判斷、老師指派身分、不確定標記、人工關鍵影格、原影片與虛擬球場同步回放、轉成戰術動畫。
+
+網址：https://batyunching.github.io/basketball-tactics-lab/ ・ 尚**不含** AI 戰術解說（Phase 4）。
 
 ## 快速開始
 
@@ -40,6 +42,8 @@ apps/web/                     React + TypeScript + Vite 前端
   src/features/student/       學生端（唯讀作答）
   src/features/cloud/         Supabase 連線、登入、同步控制
   src/features/sync/          同步引擎（離線佇列、衝突處理）
+  src/features/video/         Phase 3 影片管理、校正、追蹤、關鍵影格、同步回放
+packages/video-engine/        單應性校正、YOLOX 解碼、追蹤、隊色、軌跡與不確定標記
 packages/lesson-library/      六套教材與題目資料
 supabase/migrations/          資料表與 RLS（在 Supabase SQL Editor 執行）
 supabase/tests/               RLS 權限測試（PGlite）
@@ -60,3 +64,4 @@ docs/                         需求、架構、資料模型、驗收測試、�
 - [驗收測試](docs/acceptance-tests.md)
 - [部署（GitHub Pages）](docs/deployment.md)
 - [雲端設定（Supabase）](docs/supabase-setup.md)
+- [影片重建（Phase 3）](docs/video-analysis.md)

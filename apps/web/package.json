@@ -12,16 +12,18 @@
   },
   "dependencies": {
     "@btl/data-schemas": "0.1.0",
+    "@btl/lesson-library": "0.1.0",
     "@btl/shared-types": "0.1.0",
     "@btl/tactic-engine": "0.1.0",
     "@supabase/supabase-js": "^2.109.0",
     "idb": "^8.0.3",
     "immer": "^10.1.1",
+    "onnxruntime-web": "^1.27.0",
     "qrcode": "^1.5.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "zustand": "^5.0.5",
-    "@btl/lesson-library": "0.1.0"
+    "@btl/video-engine": "0.1.0"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
