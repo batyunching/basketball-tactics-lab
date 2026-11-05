@@ -157,6 +157,9 @@ export function WhiteboardPage() {
   );
 }
 
+/** 網站使用教學影片（YouTube） */
+export const TUTORIAL_URL = 'https://www.youtube.com/watch?v=FkfoZtVHzV0';
+
 const NAV = [
   { to: '/', label: '🏀 戰術白板', match: (r: Route) => r.segments.length === 0 },
   { to: '/lessons', label: '📚 教材庫', match: (r: Route) => r.segments[0] === 'lessons' },
@@ -180,6 +183,9 @@ function NavBar({ route }: { route: Route }) {
             {n.label}
           </a>
         ))}
+        <a className="nav-tutorial" href={TUTORIAL_URL} target="_blank" rel="noopener noreferrer" title="在 YouTube 觀看網站使用教學影片（另開分頁）" data-testid="nav-tutorial">
+          ▶ 使用教學影片
+        </a>
       </div>
       <CloudButton />
     </nav>
