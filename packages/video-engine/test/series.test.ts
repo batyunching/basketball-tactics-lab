@@ -125,20 +125,59 @@ describe('影片軌跡 → 戰術動畫', () => {
   });
 });
 
-import { clampTrim, defaultTrim, validateVideoFile } from '../src';
+import { clampTrim, defaultTrim, estimateAnalysisSec, formatClipTime, recommendedFps, validateVideoFile } from '../src';
 
 describe('影片管理規則', () => {
   it('格式與大小驗證', () => {
     expect(validateVideoFile({ type: 'video/mp4', size: 10, name: 'a.mp4' })).toBeNull();
     expect(validateVideoFile({ type: '', size: 10, name: 'clip.MOV' })).toBeNull();
     expect(validateVideoFile({ type: 'image/png', size: 10, name: 'a.png' })).toMatch(/MP4/);
-    expect(validateVideoFile({ type: 'video/mp4', size: 600 * 1024 * 1024, name: 'a.mp4' })).toMatch(/500MB/);
+    expect(validateVideoFile({ type: 'video/mp4', size: 1100 * 1024 * 1024, name: 'a.mp4' })).toMatch(/1GB/);
   });
-  it('片段長度限制 10～30 秒', () => {
-    expect(defaultTrim(45_000)).toEqual({ trimStartMs: 0, trimEndMs: 30_000 });
+  it('片段長度限制 10 秒～3 分鐘', () => {
+    expect(defaultTrim(45_000)).toEqual({ trimStartMs: 0, trimEndMs: 45_000 });
+    expect(defaultTrim(300_000)).toEqual({ trimStartMs: 0, trimEndMs: 180_000 });
+    expect(clampTrim(0, 250_000, 300_000)).toEqual({ trimStartMs: 0, trimEndMs: 180_000 });
     expect(clampTrim(5_000, 8_000, 60_000)).toEqual({ trimStartMs: 5_000, trimEndMs: 15_000 });
-    expect(clampTrim(0, 50_000, 60_000)).toEqual({ trimStartMs: 0, trimEndMs: 30_000 });
+    expect(clampTrim(0, 50_000, 60_000)).toEqual({ trimStartMs: 0, trimEndMs: 50_000 });
     expect(clampTrim(58_000, 60_000, 60_000)).toEqual({ trimStartMs: 50_000, trimEndMs: 60_000 });
     expect(clampTrim(0, 3_000, 6_000)).toEqual({ trimStartMs: 0, trimEndMs: 6_000 });
+  });
+});
+
+describe('長片段（最長 3 分鐘）', () => {
+  it('依長度建議取樣張數與預估時間', () => {
+    expect(recommendedFps(20_000)).toBe(5);
+    expect(recommendedFps(60_000)).toBe(3);
+    expect(recommendedFps(180_000)).toBe(2);
+    expect(estimateAnalysisSec(180_000, 2)).toBe(108);
+    expect(formatClipTime(12_300)).toBe('12.3 秒');
+    expect(formatClipTime(65_000)).toBe('1:05.0');
+  });
+  it('3 分鐘片段轉戰術約 30 步', () => {
+    const keyframes = [{ id: 'a', timeMs: 0, players: { 'red-1': { x: 20, y: 7.5 } } }];
+    const samples = buildPlayerSamples({ tracks: [], assignments: {}, reviews: {}, keyframes, players, times: [0], toleranceMs: 20 });
+    const p = trajectoriesToTactic({ title: 't', teamSize: 3, samples, keyframes, startMs: 0, endMs: 180_000 });
+    expect(p.steps.length).toBeLessThanOrEqual(31);
+    expect(p.steps.length).toBeGreaterThanOrEqual(25);
+  });
+});
+
+describe('效能：3 分鐘 × 每秒 10 張', () => {
+  it('六名球員的軌跡在 300ms 內計算完成', () => {
+    const times = sampleTimes(0, 180_000, 10);
+    const mk = (id: string, dx: number): Track => ({
+      trackId: id,
+      team: 'red',
+      teamConfidence: 0.9,
+      points: times.map((t) => pt(t, 15 + dx * 0.3 + (t / 180_000) * 10, 2 + dx)),
+    });
+    const tracks = projectTracks(['A', 'B', 'C', 'D', 'E', 'F'].map((id, i) => mk(id, i * 1.5)), I);
+    const assignments = { A: 'red-1', B: 'red-2', C: 'red-3', D: 'blue-1', E: 'blue-2', F: 'blue-3' };
+    const t0 = performance.now();
+    const s = buildPlayerSamples({ tracks, assignments, reviews: {}, keyframes: [], players, times, toleranceMs: 50 });
+    const ms = performance.now() - t0;
+    expect(s['blue-3']).toHaveLength(times.length);
+    expect(ms).toBeLessThan(300);
   });
 });

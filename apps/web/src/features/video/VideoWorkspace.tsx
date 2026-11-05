@@ -3,6 +3,9 @@ import type { Vec2 } from '@btl/shared-types';
 import { activePlayers, createProject } from '@btl/tactic-engine';
 import {
   FLAG_LABEL,
+  estimateAnalysisSec,
+  formatClipTime,
+  recommendedFps,
   HALF_COURT_LANDMARKS,
   applyHomography,
   buildPlayerSamples,
@@ -37,6 +40,7 @@ import { MODEL_VERSION, detectPlayers } from './detector';
 
 const STEPS = ['① 片段', '② 球場校正', '③ 自動追蹤', '④ 身分校正', '⑤ 人工關鍵影格', '⑥ 對照回放'] as const;
 const sec = (ms: number) => (ms / 1000).toFixed(1);
+const fmtDuration = (s: number) => (s < 60 ? `${s} 秒` : `${Math.round(s / 60)} 分鐘`);
 
 function playerLabel(id: string, project: ReturnType<typeof createProject>): string {
   const d = project.players.find((p) => p.id === id);
@@ -257,7 +261,7 @@ export function VideoWorkspace({ id }: { id: string }) {
           </button>
           <h1>{asset.name}</h1>
           <p className="muted small">
-            {sec(asset.durationMs)} 秒・{W}×{Hh}・分析片段 {sec(asset.trimStartMs)}～{sec(asset.trimEndMs)} 秒・🔒 只存在這台電腦
+            {formatClipTime(asset.durationMs)}・{W}×{Hh}・分析片段 {formatClipTime(asset.trimStartMs)}～{formatClipTime(asset.trimEndMs)}・🔒 只存在這台電腦
           </p>
         </div>
       </header>
@@ -349,7 +353,7 @@ export function VideoWorkspace({ id }: { id: string }) {
               data-testid="video-scrub"
             />
             <span className="time-label" data-testid="video-time">
-              {sec(time)} s
+              {formatClipTime(time)}
             </span>
             <select
               value={rate}
@@ -479,14 +483,14 @@ function TrimPanel({ asset, time, onChange, hasFrames }: { asset: VideoAsset; ti
   const set = (s: number, e: number) => onChange(clampTrim(s, e, asset.durationMs));
   const len = asset.trimEndMs - asset.trimStartMs;
   return (
-    <Panel title="選擇分析片段（10～30 秒）">
+    <Panel title="選擇分析片段（10 秒～3 分鐘）">
       <p className="muted small">影片原檔不會被修改；系統只分析與播放這個片段。</p>
       <label className="field">
-        <span>開始：{sec(asset.trimStartMs)} 秒</span>
+        <span>開始：{formatClipTime(asset.trimStartMs)}</span>
         <input type="range" min={0} max={asset.durationMs} step={100} value={asset.trimStartMs} onChange={(e) => set(Number(e.target.value), asset.trimEndMs)} data-testid="trim-start" />
       </label>
       <label className="field">
-        <span>結束：{sec(asset.trimEndMs)} 秒</span>
+        <span>結束：{formatClipTime(asset.trimEndMs)}</span>
         <input type="range" min={0} max={asset.durationMs} step={100} value={asset.trimEndMs} onChange={(e) => set(asset.trimStartMs, Number(e.target.value))} data-testid="trim-end" />
       </label>
       <div className="btn-row">
@@ -498,8 +502,9 @@ function TrimPanel({ asset, time, onChange, hasFrames }: { asset: VideoAsset; ti
         </button>
       </div>
       <p>
-        片段長度：<b data-testid="trim-length">{sec(len)} 秒</b>
+        片段長度：<b data-testid="trim-length">{formatClipTime(len)}</b>
       </p>
+      {len > 60_000 && <p className="muted small">片段超過 1 分鐘：自動追蹤會較久（下一步會顯示預估時間），也可以只選得分前的關鍵片段。</p>}
       {hasFrames && <p className="form-error small">已有分析結果；改變片段後請重新執行「③ 自動追蹤」。</p>}
     </Panel>
   );
@@ -579,7 +584,8 @@ function TrackingPanel({
   samples: Record<string, PlayerSample[]>;
   times: number[];
 }) {
-  const [fps, setFps] = useState(analysis.sampleFps || 5);
+  const clipMs = asset.trimEndMs - asset.trimStartMs;
+  const [fps, setFps] = useState(analysis.status === 'done' ? analysis.sampleFps : recommendedFps(clipMs));
   const [progress, setProgress] = useState<{ done: number; total: number; people: number } | null>(null);
   const ctrl = useRef<AbortController | null>(null);
   const running = progress !== null;
@@ -609,16 +615,16 @@ function TrackingPanel({
   return (
     <Panel title="自動偵測與追蹤">
       <p className="muted small">
-        在你的電腦上用 YOLOX 模型逐格找人，再追蹤每個人的移動、以背心顏色判斷隊伍。第一次會下載約 20MB 的模型。結果都會標示信心與不確定處，請在下一步人工確認。
+        在你的電腦上用 YOLOX 模型逐格找人，再追蹤每個人的移動、以背心顏色判斷隊伍。第一次會下載約 20MB 的模型。結果都會標示信心與不確定處，請在下一步人工確認。分析期間請保持這個分頁開著。
       </p>
       {!analysis.calibration?.homography && <p className="form-error small">尚未校正球場：可以先追蹤，但要完成校正後才能換算球場位置。</p>}
       {!asset.consent && <p className="form-error small">此影片匯入時未勾選授權確認，請確認已取得授權再分析。</p>}
       <label className="field">
         <span>每秒取樣張數（越多越準、越慢）</span>
         <select value={fps} disabled={running} onChange={(e) => setFps(Number(e.target.value))} data-testid="track-fps">
-          {[2, 5, 10].map((f) => (
+          {[1, 2, 3, 5, 10].map((f) => (
             <option key={f} value={f}>
-              {f} 張／秒（約 {Math.round(((asset.trimEndMs - asset.trimStartMs) / 1000) * f)} 張）
+              {f} 張／秒（{Math.round((clipMs / 1000) * f)} 張，約 {fmtDuration(estimateAnalysisSec(clipMs, f))}）{f === recommendedFps(clipMs) ? '・建議' : ''}
             </option>
           ))}
         </select>

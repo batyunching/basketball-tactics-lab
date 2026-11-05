@@ -1,14 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import type { VideoAnalysis, VideoAsset } from '@btl/video-engine';
-import { defaultTrim, emptyAnalysis, validateVideoFile } from '@btl/video-engine';
+import { defaultTrim, emptyAnalysis, formatClipTime, validateVideoFile } from '@btl/video-engine';
 import { navigate } from '../../app/router';
 import { useStore } from '../../app/store';
 import { repository } from '../storage/db';
 import { probeVideo } from './detector';
 
-function fmtSec(ms: number) {
-  return `${(ms / 1000).toFixed(1)} 秒`;
-}
+const fmtSec = formatClipTime;
 function fmtSize(b: number) {
   return b > 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} MB` : `${Math.round(b / 1024)} KB`;
 }
@@ -57,6 +55,8 @@ export function VideoLibraryPage() {
         consent,
         ...defaultTrim(meta.durationMs),
       };
+      // 請瀏覽器把資料標為「持久保存」，避免空間不足時被自動清除
+      await navigator.storage?.persist?.().catch(() => false);
       await repository.saveVideo(asset, f);
       await repository.saveAnalysis(emptyAnalysis(asset.id));
       useStore.getState().showToast(meta.durationMs < 10_000 ? '已匯入（影片不到 10 秒，將以全長分析）' : '已匯入影片');
@@ -73,7 +73,7 @@ export function VideoLibraryPage() {
       <header className="page-head">
         <h1>影片分析（3v3 半場）</h1>
         <p className="muted">
-          匯入 10～30 秒、固定鏡頭的 3v3 半場短片 → 校正球場 → 自動追蹤或人工標記 → 與虛擬球場同步回放，並可轉成戰術動畫。
+          匯入 10 秒～3 分鐘、固定鏡頭的 3v3 半場影片（例如一次完整進攻到得分）→ 校正球場 → 自動追蹤或人工標記 → 與虛擬球場同步回放，並可轉成戰術動畫。
         </p>
         <p className="muted small">🔒 影片與分析結果只存在這台電腦的瀏覽器，不會上傳；分析在你的電腦上執行，不做人臉辨識。</p>
       </header>
@@ -82,7 +82,7 @@ export function VideoLibraryPage() {
         <h2>匯入影片</h2>
         <ul className="bullets small">
           <li>建議：固定、較高位置的鏡頭，能拍到整個半場；兩隊穿紅、藍兩色背心。</li>
-          <li>格式：MP4（H.264）、WebM 或 MOV，500MB 以內。超過 30 秒的影片可在下一步選擇片段。</li>
+          <li>格式：MP4（H.264）、WebM 或 MOV，1GB 以內。超過 3 分鐘的影片可在下一步選擇要分析的片段。</li>
         </ul>
         <label className="check">
           <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} data-testid="video-consent" />

@@ -156,3 +156,19 @@ test('格式不符的檔案被拒絕；未勾選授權不能匯入', async ({ pa
   await page.getByTestId('video-file').setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('hello') });
   await expect(page.getByTestId('toast')).toContainText('只接受 MP4');
 });
+
+test('長影片（3 分 20 秒）：預設分析前 3 分鐘，取樣自動降為每秒 2 張並顯示預估時間', async ({ page }) => {
+  await page.goto('/#/video');
+  await page.getByTestId('video-consent').check();
+  await page.getByTestId('video-file').setInputFiles(join(FIX, 'long-200s.webm'));
+  await expect(page.getByTestId('video-workspace')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('trim-length')).toHaveText('3:00.0');
+  await page.getByTestId('trim-start').fill('150000');
+  await expect(page.getByTestId('trim-length')).toHaveText('30.0 秒'); // 結束點維持 3:00
+  await page.getByTestId('trim-start').fill('0');
+  await page.getByTestId('trim-end').fill('200000');
+  await expect(page.getByTestId('trim-length')).toHaveText('3:00.0');
+  await page.getByTestId('vstep-3').click();
+  await expect(page.getByTestId('track-fps')).toHaveValue('2');
+  await expect(page.getByTestId('track-fps').locator('option:checked')).toContainText('360 張');
+});

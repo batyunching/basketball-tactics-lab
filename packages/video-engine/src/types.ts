@@ -113,7 +113,7 @@ export interface VideoAsset {
   createdAt: string;
   /** 老師確認已取得校內必要授權 */
   consent: boolean;
-  /** 分析片段（10～30 秒） */
+  /** 分析片段（10 秒～3 分鐘） */
   trimStartMs: number;
   trimEndMs: number;
 }
@@ -137,8 +137,8 @@ export interface VideoAnalysis {
 }
 
 export const MIN_CLIP_MS = 10_000;
-export const MAX_CLIP_MS = 30_000;
-export const MAX_VIDEO_BYTES = 500 * 1024 * 1024;
+export const MAX_CLIP_MS = 180_000;
+export const MAX_VIDEO_BYTES = 1024 * 1024 * 1024;
 export const ACCEPTED_VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/quicktime'];
 
 export function emptyAnalysis(videoId: string): VideoAnalysis {
@@ -164,17 +164,17 @@ export function emptyAnalysis(videoId: string): VideoAnalysis {
 export function validateVideoFile(f: { type: string; size: number; name: string }): string | null {
   const okType = ACCEPTED_VIDEO_TYPES.includes(f.type) || /\.(mp4|m4v|webm|mov)$/i.test(f.name);
   if (!okType) return '只接受 MP4、WebM 或 MOV 影片';
-  if (f.size > MAX_VIDEO_BYTES) return '影片超過 500MB，請先剪短或降低解析度';
+  if (f.size > MAX_VIDEO_BYTES) return '影片超過 1GB，請先剪短或降低解析度（建議 720p 或 1080p）';
   if (f.size === 0) return '檔案是空的';
   return null;
 }
 
-/** 預設分析片段：從頭開始最多 30 秒 */
+/** 預設分析片段：從頭開始最多 3 分鐘 */
 export function defaultTrim(durationMs: number): { trimStartMs: number; trimEndMs: number } {
   return { trimStartMs: 0, trimEndMs: Math.min(durationMs, MAX_CLIP_MS) };
 }
 
-/** 調整片段：長度限制在 10～30 秒（影片本身不足 10 秒時用全長） */
+/** 調整片段：長度限制在 10 秒～3 分鐘（影片本身不足 10 秒時用全長） */
 export function clampTrim(start: number, end: number, durationMs: number): { trimStartMs: number; trimEndMs: number } {
   const minLen = Math.min(MIN_CLIP_MS, durationMs);
   let s = Math.max(0, Math.min(start, durationMs - minLen));
@@ -183,4 +183,24 @@ export function clampTrim(start: number, end: number, durationMs: number): { tri
   s = Math.round(s);
   e = Math.round(e);
   return { trimStartMs: s, trimEndMs: e };
+}
+
+/** 依片段長度建議每秒取樣張數：越長取越少，讓分析時間維持在合理範圍 */
+export function recommendedFps(clipMs: number): number {
+  if (clipMs <= 30_000) return 5;
+  if (clipMs <= 90_000) return 3;
+  return 2;
+}
+
+/** 以一般筆電每張約 0.3 秒估算分析時間（秒） */
+export function estimateAnalysisSec(clipMs: number, fps: number, secPerFrame = 0.3): number {
+  return Math.round((clipMs / 1000) * fps * secPerFrame);
+}
+
+/** 顯示時間：未滿 1 分鐘「12.3 秒」，以上「1:05.0」 */
+export function formatClipTime(ms: number): string {
+  const s = ms / 1000;
+  if (s < 60) return `${s.toFixed(1)} 秒`;
+  const m = Math.floor(s / 60);
+  return `${m}:${(s - m * 60).toFixed(1).padStart(4, '0')}`;
 }

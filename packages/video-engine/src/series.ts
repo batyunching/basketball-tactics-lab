@@ -133,9 +133,23 @@ function identityConfidence(a: Anchor): number {
   return Math.max(0.1, Math.round(c * 100) / 100);
 }
 
+/** 第一個 timeMs ≥ t 的索引（anchors 已依時間排序） */
+function lowerBound(anchors: Anchor[], t: number): number {
+  let lo = 0;
+  let hi = anchors.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (anchors[mid]!.timeMs < t) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
 function sampleAt(anchors: Anchor[], t: number, tol: number) {
-  // 1. 人工關鍵影格優先，其次觀測點
-  const near = anchors.filter((a) => Math.abs(a.timeMs - t) <= tol);
+  // 1. 容許誤差內：人工關鍵影格優先，其次觀測點（二分搜尋，長片段也快）
+  const from = lowerBound(anchors, t - tol);
+  const near: Anchor[] = [];
+  for (let i = from; i < anchors.length && anchors[i]!.timeMs <= t + tol; i++) near.push(anchors[i]!);
   const best = near.find((a) => a.source === 'manual') ?? near.find((a) => a.source === 'observed') ?? near[0];
   if (best) {
     return {
@@ -149,15 +163,10 @@ function sampleAt(anchors: Anchor[], t: number, tol: number) {
     };
   }
   // 2. 前後兩個錨點之間內插（間隔太長就不補）
-  let before: Anchor | undefined;
-  let after: Anchor | undefined;
-  for (const a of anchors) {
-    if (a.timeMs < t) before = a;
-    else if (a.timeMs > t) {
-      after = a;
-      break;
-    }
-  }
+  const idx = lowerBound(anchors, t);
+  const before = idx > 0 ? anchors[idx - 1] : undefined;
+  let after: Anchor | undefined = anchors[idx];
+  if (after && after.timeMs === t) after = anchors[idx + 1];
   if (!before || !after || after.timeMs - before.timeMs > MAX_INTERPOLATE_MS) return null;
   const k = (t - before.timeMs) / (after.timeMs - before.timeMs);
   const pos = lerpVec(before.pos, after.pos, k);

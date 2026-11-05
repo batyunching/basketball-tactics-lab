@@ -16,7 +16,8 @@ export function trajectoriesToTactic(opts: {
   endMs: number;
   intervalMs?: number;
 }): TacticProject {
-  const interval = opts.intervalMs ?? 2000;
+  // 長片段（最長 3 分鐘）約取 30 步，避免步驟過多
+  const interval = opts.intervalMs ?? Math.max(2000, Math.ceil((opts.endMs - opts.startMs) / 30 / 500) * 500);
   const kf = [...opts.keyframes].sort((a, b) => a.timeMs - b.timeMs);
   const times = kf.length >= 2 ? kf.map((k) => k.timeMs) : (() => {
     const t: number[] = [];
